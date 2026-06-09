@@ -35,13 +35,34 @@ Infra contract tests run with `uv run pytest deploy/tests` (kept out of `test/` 
 Matches the frozen entrypoint in `AGENT_5_infra.md`. **No entrypoint name differed** from
 the frozen set (migrate/seed via `python -m …`; ingest via `helixpay ingest ./data`).
 
-## Vhost / live URL plan
+## Vhost / live URL — DONE
 
-Two snippets provided (use whichever proxy is on the droplet). Replace
-`helixpay.example.com` with the real subdomain pointed at `138.197.187.49`; if none is
-wired yet, `helixpay.138.197.187.49.sslip.io` gives an instant Caddy-TLS URL. Live MCP
-lands at `https://<subdomain>/mcp`. **For `SOLUTION.md`:** the live URL is set when the
-orchestrator runs the deploy on the box (see below).
+**Live URL: `https://helixpay.serverado.app`** · MCP at `https://helixpay.serverado.app/mcp`.
+
+DNS, proxy, and TLS are already provisioned on the box (2026-06-09):
+- **DNS:** `helixpay.serverado.app` A → `138.197.187.49` (DO zone `serverado.app`, via `doctl`).
+- **Proxy:** the droplet runs **system nginx** (not Caddy). Added
+  `/etc/nginx/sites-available/helixpay` (→ `proxy_pass http://127.0.0.1:8000`, streamable-HTTP
+  settings), symlinked into `sites-enabled`, `nginx -t` clean, reloaded with neighbor sites
+  staying 200 (no disruption).
+- **TLS:** `certbot --nginx -d helixpay.serverado.app --redirect` — Let's Encrypt cert
+  (CN=helixpay.serverado.app, expires 2026-09-07), HTTP→HTTPS 301.
+- **Current state:** `https://helixpay.serverado.app/` returns **502** — nginx is correctly
+  routing to `127.0.0.1:8000`, which has no app yet. It flips to 200 once the integrated app
+  is deployed (below).
+
+**Box access:** `ssh -i ~/.ssh/id_rsa root@138.197.187.49` (the DO-registered
+"obsidian-deploy" key). The `deploy/nginx.conf` in this repo mirrors the deployed port-80
+block; certbot manages the 443 block on the box. (`deploy/Caddyfile` is kept as a reference
+for a Caddy box; this droplet uses nginx.)
+
+## Remaining: deploy the app (gated on integration)
+
+DNS/TLS/proxy are live; the last mile is running the app so 502 → 200:
+1. Integrate Agents 1–4 onto `main` (+ the pyproject deps & console script below).
+2. On the box: `git clone` the repo, create `.env` (chmod 600), `./deploy/deploy.sh`
+   (`docker compose up -d --build` → migrate → seed → ingest). nginx already fronts 8000.
+3. Verify `https://helixpay.serverado.app/health` is 200 and `/mcp` speaks streamable-HTTP.
 
 ## Verified in isolation
 

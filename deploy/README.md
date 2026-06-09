@@ -18,7 +18,12 @@ App: <http://localhost:8000> · health: `/health` · MCP (streamable-HTTP): `/mc
 
 ## Production (droplet `138.197.187.49`)
 
-The box already has Docker + a TLS reverse proxy + DNS pointing at it. Deploy is
+**Live URL: <https://helixpay.serverado.app>** (MCP at `/mcp`). DNS + nginx vhost + TLS
+are already provisioned (2026-06-09) — see [`HANDOFF.md`](./HANDOFF.md). The URL currently
+returns 502 until the integrated app is deployed (step 3). Box: `ssh -i ~/.ssh/id_rsa
+root@138.197.187.49`; the proxy is **system nginx** (use [`nginx.conf`](./nginx.conf)).
+
+The box already has Docker + the nginx TLS proxy + DNS pointing at it. Deploy is
 CI/CD-first (governance Rule 11); direct host access is emergency-only.
 
 1. **Vhost** — wire the subdomain to the loopback app with whichever proxy is
