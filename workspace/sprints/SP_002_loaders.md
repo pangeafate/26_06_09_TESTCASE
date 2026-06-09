@@ -285,4 +285,18 @@ Recorded per AGENTS.md repository-contract rule 3.
 
 ### Post-Implementation Review
 
-(plan-blind review over changed code + tests after tests pass — filled at Stage 5)
+- **Iteration 1** (2026-06-09): code-reviewer (independent sub-agent, **plan-blind**) found 1 CRITICAL, 2 HIGH, 2 MEDIUM, 3 LOW. Files reviewed: helixpay/ingest/loaders/{base,markdown,pdf,html,slack,email,code,image,__init__}.py and test/unit/loaders/*.
+- **Iteration 2** (2026-06-09): security-auditor (independent sub-agent, **plan-blind**) found 0 CRITICAL, 1 HIGH, 0 MEDIUM, 2 LOW. Files reviewed: helixpay/ingest/loaders/{base,image,html,pdf,slack,email,markdown,code,__init__}.py. Verified clean: no secret/API-key reaches a log/exception/Chunk; date + email regexes linear; file handles closed; malformed input raises clean LoaderError.
+
+**Resolution — all CRITICAL and HIGH addressed (verified by new regression tests + full suite green):**
+
+1. **C1 (data loss: `segment_markdown` dropped a heading when two headings had no body between them)**: confirmed every interview file (`# Interview: <name>` then `## Meta`) lost the interviewee name from chunk text. Fixed: consecutive heading / bold-label lines now **accumulate** into `pending_label` and attach to the following block, so both survive. Regression test `test_segment_markdown_consecutive_headings_are_not_dropped` + a real-file check (`Interview: Maria Silva` now appears in chunks).
+2. **H2 → escalated to HIGH ReDoS (iteration 2): slack `_MSG_HEADER_RE` backtracked quadratically on a hostile unclosed bold line** (~1.2 s on a 42 KB line). Fixed with an O(1) pre-check (`_is_msg_header`: bounded length + `**`-delimited) before the regex and `[^*\n]` classes. Regression test `test_slack_header_detection_is_not_redos_prone` (< 1 s on the adversarial input). This also fixes the original H2 (a bold inline phrase containing a dash no longer false-matches a message boundary — a clock time is required).
+3. **H3 (ImageConnector.discover only globbed `.jpeg`, silently skipping `.jpg`/`.png` that `_MEDIA_TYPES` supports)**: discovery now iterates every supported extension.
+
+**Resolution — MEDIUM/LOW:**
+- **M4 (registry test couldn't detect a duplicate connector — set collapses it)**: added `len(all_connectors()) == len(SourceType)`.
+- **M5 (40-char labelled-date window could truncate a verbose `As of …` date)**: widened to 60.
+- **L6 (`normalize_text` strips leading blank lines too — undocumented)**: documented the intent (idempotent hashing).
+- **L (SDK/pdf exception text in log/LoaderError)**: confirmed no secret is present in those messages (the key is read from env by the SDK and never referenced here); left as-is with the `type(exc)`-truncation note for a future hardening pass.
+- **L8 (missing test for the consecutive-heading case)**: added (see C1).
