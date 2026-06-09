@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HelixPay Q4 2025 KPI Dashboard — Internal</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f1419; color: #e7eaee; margin: 0; padding: 32px; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { color: #8b95a3; font-size: 12px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card { background: #1a1f2a; border: 1px solid #232a36; border-radius: 6px; padding: 16px; }
+  .card .label { color: #8b95a3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 28px; font-weight: 600; margin-top: 6px; }
+  .card .delta { font-size: 12px; margin-top: 4px; }
+  .delta.up { color: #56d364; }
+  .delta.down { color: #f08c8c; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #232a36; }
+  th { color: #8b95a3; font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  .section { background: #1a1f2a; border: 1px solid #232a36; border-radius: 6px; padding: 20px; margin-bottom: 16px; }
+  .section h2 { font-size: 15px; font-weight: 500; margin: 0 0 12px 0; }
+  .stamp { color: #8b95a3; font-size: 10px; margin-top: 24px; }
+</style>
+</head>
+<body>
+  <h1>HelixPay — Q4 2025 KPI Dashboard</h1>
+  <div class="subtitle">Internal · As of 2026-01-15 · Auto-refreshed daily · Owner: FP&amp;A (Aisha Mahmud)</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Q4 Revenue (SGD)</div>
+      <div class="value">15.4M</div>
+      <div class="delta up">+12% YoY · 99% of plan</div>
+    </div>
+    <div class="card">
+      <div class="label">Net New Merchants</div>
+      <div class="value">438</div>
+      <div class="delta up">+18% YoY · 109% of plan</div>
+    </div>
+    <div class="card">
+      <div class="label">Total Paid Merchants</div>
+      <div class="value">3,012</div>
+      <div class="delta up">+17% QoQ</div>
+    </div>
+    <div class="card">
+      <div class="label">Aggregate NPS</div>
+      <div class="value">46</div>
+      <div class="delta up">+1 vs Q3</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Revenue by region</h2>
+    <table>
+      <tr><th>Region</th><th>Q4 Actual</th><th>Q4 Plan</th><th>YoY</th></tr>
+      <tr><td>SEA (SGD)</td><td>10.1M</td><td>10.0M</td><td>+11%</td></tr>
+      <tr><td>Brasil (SGD equiv)</td><td>5.3M</td><td>5.5M</td><td>+15%</td></tr>
+      <tr><td>Brasil (BRL)</td><td>R$24.4M</td><td>R$25.2M</td><td>+15%</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Product mix (% of new ARR Q4)</h2>
+    <table>
+      <tr><th>Product</th><th>Share</th><th>vs Q3</th></tr>
+      <tr><td>HelixPay Core</td><td>54%</td><td>−3 pp</td></tr>
+      <tr><td>HelixPay POS</td><td>22%</td><td>+1 pp</td></tr>
+      <tr><td>HelixPay Loyalty</td><td>11%</td><td>flat</td></tr>
+      <tr><td>HelixPay POS Self-Service</td><td>8%</td><td>+2 pp</td></tr>
+      <tr><td>HelixPay Tap</td><td>5%</td><td>+5 pp (new)</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Customer health</h2>
+    <table>
+      <tr><th>Metric</th><th>Q4</th><th>Target</th></tr>
+      <tr><td>SEA enterprise NPS</td><td>53</td><td>≥50</td></tr>
+      <tr><td>SEA SMB NPS</td><td>39</td><td>≥40</td></tr>
+      <tr><td>Brasil enterprise NPS</td><td>56</td><td>≥50</td></tr>
+      <tr><td>Brasil SMB NPS</td><td>39</td><td>≥40</td></tr>
+      <tr><td>Logo churn (annualized)</td><td>9.4%</td><td>&lt;10%</td></tr>
+      <tr><td>ARR churn (annualized)</td><td>6.1%</td><td>&lt;7%</td></tr>
+    </table>
+  </div>
+
+  <div class="stamp">helixpay-bi · Looker dashboard 27 · exported as static HTML 2026-01-15 14:22 SGT</div>
+</body>
+</html>

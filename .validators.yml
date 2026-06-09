@@ -1,0 +1,85 @@
+# Validator configuration example for the development-rule scaffold.
+#
+# Shared config file schema:
+#   - doc_reality: consumed by validators/validate_doc_reality.py
+#   - doc_freshness: consumed by validators/validate_doc_freshness.py
+#   - required_files: consumed by validators/validate_structure.py
+#   - bootstrap_files: consumed by validators/validate_workspace.py
+#   - module_size: consumed by validators/validate_module_size.py
+#   - coverage: consumed by validators/validate_tdd.py
+# Unknown keys are ignored by consumers.
+
+# Coverage gate for validate_tdd.py. Artifact-based: produce a Cobertura report
+# with `pytest --cov=src --cov-report=xml`, then validate_tdd.py parses it and
+# fails when line/branch coverage is below threshold. A missing report is
+# advisory unless require_report is true. All keys optional (defaults shown).
+coverage:
+  line: 80              # minimum line coverage percent (GL-TDD.md)
+  branch: 75            # minimum branch coverage percent (GL-TDD.md)
+  report: coverage.xml  # path (relative to project root) to the Cobertura report
+  require_report: false # true → a missing report is a hard failure, not advisory
+
+# Language-agnostic God-file sensor. Counts raw lines and import-like lines per
+# source file. lines > fail_lines is a hard FAIL; lines > warn_lines or
+# imports > warn_imports are warnings (exit 0). Built-in vendored/generated dirs
+# (.git, .venv, node_modules, dist, build, vendor, __pycache__, …) are always
+# skipped. All keys are optional — omit the block to run with built-in defaults.
+module_size:
+  enabled: true
+  # Directories scanned for source files (relative to project root).
+  source_roots: [src, scripts, skills]
+  # File extensions treated as source (defaults cover most mainstream langs).
+  extensions: ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.rb', '.php', '.cs', '.cpp', '.swift']
+  warn_lines: 800       # WARNING above this — approaching God-file size
+  fail_lines: 2000      # FAIL above this — must be split (GL-RDD SRP)
+  warn_imports: 25      # WARNING above this — high coupling (advisory)
+  # fnmatch globs over the project-root-relative POSIX path; '*' spans '/',
+  # so write '*.gen.ts', not '**/*.gen.ts'. Excluded files are never scanned.
+  exclude:
+    - "*.min.js"
+    - "*.generated.*"
+    - "*.gen.ts"
+  # Grandfathered files: still WARN (debt stays visible) but never FAIL.
+  # Add a tracking sprint id in a trailing comment when you list one.
+  allow: []
+    # - "src/runtime/components.ts"   # SP_NNN: God-file split in progress
+
+doc_freshness:
+  enabled: true
+  source_roots: [src, scripts, skills]
+  meta_docs:
+    - PROGRESS.md
+    - FEATURE_LIST.md
+    - PROJECT_ROADMAP.md
+    - ARCHITECTURE.md
+    - DATA_SCHEMA.md
+    - CODEBASE_STRUCTURE.md
+    - USER_STORIES.md
+  exempt_paths:
+    - validators/test_*.py
+    - validators/test_fixtures/**
+    - skills/**/test_*.py
+
+doc_reality:
+  exclude_dirs:
+    - .git
+    - .venv
+    - node_modules
+    - dist
+    - build
+  dead_path_exclusions:
+    - test/unit/
+    - test/integration/
+    - test/fixtures/
+    - __pycache__/
+    - tasks/
+    - .venv/
+  dead_path_glob_exclusions:
+    - "src/*"
+    - "test/unit/*"
+    - "test/integration/*"
+    - "test/fixtures/*"
+    - ".github/workflows/*"
+  frontmatter_required:
+    - PROGRESS.md
+  duplication_threshold: 30

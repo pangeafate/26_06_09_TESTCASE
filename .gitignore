@@ -1,0 +1,13 @@
+.env
+*.key
+*.pem
+credentials*
+__pycache__/
+.pytest_cache/
+*.pyc
+.pre_impl_passed
+
+# DEV_RULES source bundle: operative copies (validators/, practices/, scripts/,
+# templates) are checked out at project root by the bootstrap. The bundle keeps
+# its own nested .git, so ignore it here to avoid an embedded repo.
+DEV_RULES/
