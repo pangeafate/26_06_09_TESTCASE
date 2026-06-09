@@ -11,9 +11,13 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_001
+**Current:** SP_004
 **Started:** 2026-06-09
-**Stage:** Documentation
+**Stage:** Plan Review
+
+<!-- SP_004 (Agent 3, query brain) worktree-local pointer so the sprint gate
+     validates this sprint. The orchestrator reconciles PROGRESS.md at integration;
+     SP_001's gate record below is unchanged (prior sprint: SP_001). -->>
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
