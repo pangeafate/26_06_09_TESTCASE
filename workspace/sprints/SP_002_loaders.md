@@ -5,7 +5,7 @@ features: [ingest-loaders, source-connectors, chunking]
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_002-loaders
 worktree: .claude/worktrees/SP_002
