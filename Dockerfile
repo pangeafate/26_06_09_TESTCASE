@@ -23,6 +23,12 @@ COPY . .
 # Install the package and its runtime dependencies into the system environment.
 RUN uv pip install --system .
 
+# Drop privileges: run the server as a non-root user. The app writes nothing to
+# the image filesystem (state lives in the db container's volume), so read-only
+# /app owned by root is fine; port 8000 is unprivileged.
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
+
 EXPOSE 8000
 
 # Default process: serve the API + MCP. `make ingest` / `make demo` override this

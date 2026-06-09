@@ -12,7 +12,9 @@ APP_RUN := $(COMPOSE) run --rm app
 up:
 	$(COMPOSE) up -d --build
 	@echo "waiting for db to become healthy..."
-	@until [ "$$($(COMPOSE) ps db --format '{{.Health}}')" = "healthy" ]; do \
+	@n=0; until [ "$$($(COMPOSE) ps db --format '{{.Health}}')" = "healthy" ]; do \
+		n=$$((n+1)); \
+		if [ $$n -gt 60 ]; then echo " db did not become healthy in 60s" >&2; exit 1; fi; \
 		printf '.'; sleep 1; \
 	done; echo " healthy"
 	$(APP_RUN) python -m helixpay.db.migrate

@@ -182,4 +182,18 @@ is **Foundational** — high blast radius (deploy), so the full lifecycle applie
 
 ### Post-Implementation Review
 
-_(Filled after implementation — plan-blind review over the built artifacts + tests.)_
+Plan-blind review over the built artifacts + tests (compose/Dockerfile/Makefile/
+deploy/env), independent of the plan rationale. Evidence: `docker compose config`
+renders (db has no ports, app `host_ip 127.0.0.1:8000`, `depends_on db
+service_healthy`); `docker compose build app` succeeds; image runs as uid 10001 and
+imports `helixpay`; `uv run pytest deploy/tests` → 12 passed.
+
+- **Iteration 1** — *Reviewer: code-review (plan-blind, artifacts + tests).* Severity: **MEDIUM** (0 CRITICAL, 0 HIGH, 2 MEDIUM, 1 LOW). Files reviewed: `docker-compose.yml`, `Dockerfile`, `Makefile`, `.env.example`, `deploy/**`, `deploy/tests/test_infra_contract.py`.
+  - MEDIUM: container ran as root → **fixed**: added a non-root `appuser` (uid 10001) `USER` directive; verified `id` reports uid 10001 and import still works.
+  - MEDIUM: `make up` health-wait loop could hang forever if db never goes healthy → **fixed**: bounded the loop to 60s, exits non-zero on timeout.
+  - LOW: image copied governance dirs (`practices/`, `validators/`, `scripts/`, `fanout/`) → **fixed**: extended `.dockerignore`; image now ships only `helixpay/`, `data/`, `pyproject.toml` (+ `prompts/`,`eval/` at integration).
+- **Iteration 2** — *Reviewer: architect-review (plan-blind, deploy safety + integration seams).* Severity: **LOW** (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW — non-blocking, handed off). Files reviewed: `docker-compose.yml`, `Dockerfile`, `Makefile`, `deploy/deploy.sh`.
+  - Confirmed the safety invariants hold post-change: db unexposed, app loopback-only, secrets env-only, no secrets in the image. 0 blocking findings.
+  - LOW (handoff, not fixable in my slice): the image's runtime needs `uvicorn[standard]`, `fastapi`, `mcp`, `anthropic`, `voyageai` — owned by Agents 2/3/4 and consolidated into `pyproject.toml` at merge; `helixpay` console script needs `[project.scripts]`. Both flagged in the delivery report.
+  - LOW (handoff): `make demo` runs `eval/run.py` in a one-off app container (has DB + keys); if Agent 6's harness talks HTTP it should target the running `app` service or call the library in-process. Flagged for Agent 6.
+  - Decision: **accept.** 0 CRITICAL / 0 HIGH; all MEDIUMs fixed; remaining LOWs are cross-agent integration items, not defects in this slice.
