@@ -381,4 +381,18 @@ resolution accuracy on the name traps, contradictions found, and any new gotchas
 **Deferred (non-blocking, tracked in delivery report):** cross-run cost-skip of unchanged documents pending the proposed `Repository.get_document` seam (H3); deep figure/image extraction stays caption-level (spec §11 scope cut, Agent 1's seam).
 
 ### Post-Implementation Review
-<!-- filled after tests pass, 2 plan-blind iterations over changed code+tests -->
+- **Iteration 1** (2026-06-09): code-reviewer + debugger, both plan-blind (code+tests only, no plan). Combined they found 2 CRITICAL, 4 HIGH, ~6 MEDIUM, several LOW. Files reviewed: helixpay/ingest/{embed,pipeline,resolve,contradict}.py, helixpay/ingest/extract/{schemas,prompts,llm,extractor}.py, prompts/extract_claims.md, test/unit/ingest/*, test/integration/ingest/*.
+- **Iteration 2** (2026-06-09): code-reviewer, plan-blind. Found 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW. Files reviewed: same source + tests.
+
+**Resolution — all CRITICAL/HIGH fixed; tests added; full suite re-run green (incl. against a live pgvector container):**
+1. **`normalize_value` parsing defects (CRITICAL):** the old `_NUM_RE` pulled a stray digit from labels and treated `"18 months"` as `18M`, ignored the Unicode minus `−` (U+2212), and turned `"Q1 2026"` into `1.0`. Replaced with a **pure-number gate** (numeric only when the whole cleaned string is a number) + Unicode-minus normalization (applied to both the numeric and the text-comparison path). New tests: `18 months ≠ 18M`, `Q1 2026/v1.0 non-numeric`, `−11% == -11%`, unicode-minus text fallback.
+2. **`roster_hint` always empty (CRITICAL):** the prompt advertised a roster section that was never populated. Added a caller-injectable `roster_hint` seam to `pipeline.run` threaded into `ChunkContext` (the frozen `Repository` has no entity-listing method, so it can't be auto-built without a contract change; resolution still enforces the roster downstream). Prompt reworded ("may be empty"); test asserts the hint reaches the extractor.
+3. **`classify` mislabeled undated cross-source conflicts as `temporal` (HIGH):** restructured the decision tree so different-document + period-compatible (equal or either-undated `as_of`) is `source_disagreement`. New test.
+4. **`values_conflict(None, x)` false positive (HIGH):** a missing value is no longer treated as a competing fact (None-guards). New test.
+5. **Self-loop relation links (HIGH):** the pipeline now drops a relation whose endpoints resolve to the same entity (protects the recursive-CTE org graph). New test.
+6. **`detect()` re-counted existing contradictions on re-run (found by running the integration test against a REAL pgvector DB — the FakeRepo hid it):** `detect` now dedups against `get_contradictions(subject_id)` so a re-run writes/returns zero. Unit + DB integration idempotency assertions tightened.
+7. **MEDIUM/LOW:** honorific-only mention (`"Dr."`) no longer mints a junk entity; contradict-test FakeRepo dedups contradictions to mirror the repo; prompt fence instruction de-contradicted; dead test setup removed.
+
+**Validation:** unit suite 61 ingest tests (88 repo-wide) green with no DB/keys; with a live `pgvector/pgvector:pg16` container the **full suite is 101 passed / 1 skipped** (the 1 skip is the API-key-gated real-data smoke), exercising the real SQL for upsert/add_chunks(pgvector)/resolve/canonicalize/add_claim/add_contradiction(ON CONFLICT)/supersede/get_sources. `mypy helixpay` clean (26 files).
+
+**Deferred (LOW, non-blocking):** different-`as_of` + overlapping-window + different-document pairs are labeled `temporal` (a defensible labeling choice, contradiction still written); cross-run cost-skip of unchanged documents pending the proposed `Repository.get_document(content_hash)` seam (the injectable `already_ingested` seam covers it when a checker is supplied).
