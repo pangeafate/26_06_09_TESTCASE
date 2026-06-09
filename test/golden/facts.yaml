@@ -1,0 +1,310 @@
+# HelixPay golden ground truth — authored BY EYE from the raw data/ files.
+#
+# This file is the honest oracle for the build (HELIXPAY_BUILD_SPEC.md §8). Every
+# fact below was read out of a raw source file by a human-independent grader who
+# wrote NONE of the extraction or query code. The extraction check (eval/run.py)
+# asserts each of these exists as a claim/link in the Repository with the right
+# source_uri + as_of, and reports recall/precision over the set.
+#
+# Schema of each fact:
+#   id          unique slug
+#   format      md | pdf | html | slack | email | code | interview | image
+#   kind        claim | link
+#   subject     the entity the fact is about (free text; resolved via Repository)
+#   predicate   metric_vocab key where applicable, else a stable free predicate
+#   value       the asserted value, as printed (matched normalization-tolerantly)
+#   as_of       the fact's effective date (ISO); see README for as_of matching
+#   source_uri  the raw file the fact was read from (must exist under data/)
+#   recall_bar  true (counts toward the recall denominator) | false (informational)
+#   For kind: link  → also from / to (canonical names) + link_type
+#   note        why this fact matters / where exactly it was read
+#
+# COVERAGE: >=1 bar fact per source format. Image facts are caption-level only
+# (deep JPEG figure extraction is a SPEC §11 scope cut) and are recall_bar:false.
+
+facts:
+  # ---- markdown -----------------------------------------------------------
+  - id: md-overview-runway
+    format: md
+    kind: claim
+    subject: HelixPay
+    predicate: runway
+    value: "18 months"
+    as_of: 2026-04-22
+    source_uri: data/overview.md
+    recall_bar: true
+    note: >-
+      overview.md (Priya Raman orientation note, Apr 22): "~18 months of runway at
+      current burn". Corroborated by q1-2026-results.pdf and the April dashboard.
+
+  - id: md-allhands-confluence-june
+    format: md
+    kind: claim
+    subject: Project Confluence
+    predicate: ga_target
+    value: "end of June 2026"
+    as_of: 2026-04-15
+    source_uri: data/all-hands-2026-04-15.md
+    recall_bar: true
+    note: >-
+      all-hands (Daniel Tan, Apr 15, PUBLIC stance): "on track for the end-of-June
+      launch ... Q3 is not on the table. End of June is the plan." This is side A of
+      the real planted contradiction (see contradictions: below).
+
+  # ---- pdf -----------------------------------------------------------------
+  - id: pdf-results-revenue
+    format: pdf
+    kind: claim
+    subject: HelixPay
+    predicate: revenue
+    value: "SGD 14.2M"
+    as_of: 2026-03-31
+    source_uri: data/q1-2026-results.pdf
+    recall_bar: true
+    note: >-
+      q1-2026-results.pdf headline P&L: Revenue 14.2 (SGD millions), Q1 2026 (period
+      1 Jan–31 Mar 2026). Same figure in the dashboard and the board deck — revenue
+      is CONSISTENT across all sources (no revenue contradiction; see README).
+
+  - id: pdf-results-net-new-merchants
+    format: pdf
+    kind: claim
+    subject: HelixPay
+    predicate: net_new_merchants
+    value: "412"
+    as_of: 2026-03-31
+    source_uri: data/q1-2026-results.pdf
+    recall_bar: true
+    note: 'q1-2026-results.pdf: "Net new merchants of 412 exceeded the plan of 380."'
+
+  - id: pdf-boarddeck-confluence-q3
+    format: pdf
+    kind: claim
+    subject: Project Confluence
+    predicate: ga_target
+    value: "end of Q3 2026"
+    as_of: 2026-05-12
+    source_uri: data/board-deck-q1-2026.pdf
+    recall_bar: true
+    note: >-
+      board-deck-q1-2026.pdf (Q1 2026 Board Review, 12 May 2026), "Confluence
+      platform — schedule reset": "Original plan: end-Q2 GA. Reality: end-Q3." This is
+      side B of the real planted contradiction — freshest, and supersedes the June
+      stance. Corroborated by weekly-review (04-21) and board-update (04-22).
+
+  # ---- html (dashboard: number AND its as-of date) -------------------------
+  - id: html-dashboard-revenue
+    format: html
+    kind: claim
+    subject: HelixPay
+    predicate: revenue
+    value: "14.2M"
+    as_of: 2026-03-31
+    source_uri: data/dashboards/april-2026-kpi-dashboard.html
+    recall_bar: true
+    note: >-
+      april-2026-kpi-dashboard.html card "Q1 2026 Revenue (SGD) 14.2M". Dashboard
+      "As of 2026-04-21"; the metric's reporting period is Q1 (ending 2026-03-31).
+      Capturing BOTH the number and its as-of date is the point (CLAUDE.md gotcha).
+
+  - id: html-dashboard-nps
+    format: html
+    kind: claim
+    subject: HelixPay
+    predicate: nps
+    value: "47"
+    as_of: 2026-03-31
+    source_uri: data/dashboards/april-2026-kpi-dashboard.html
+    recall_bar: true
+    note: >-
+      april-2026-kpi-dashboard.html "Aggregate NPS 47". The 47 aggregate is consistent
+      across dashboard, results PDF, board deck, weekly review, board update. (The "62"
+      used as the all-hands headline is the SEA-enterprise segment — a framing
+      disagreement, not a value conflict; see contradictions: nps-framing.)
+
+  # ---- slack ---------------------------------------------------------------
+  - id: slack-crm-cutover-june
+    format: slack
+    kind: claim
+    subject: CRM migration
+    predicate: completion_target
+    value: "end of June 2026"
+    as_of: 2026-04-15
+    source_uri: data/chat/sales-floor-april.md
+    recall_bar: true
+    note: >-
+      sales-floor-april.md (Sofia, Wed Apr 15, on Pipedrive→HubSpot): "end of june for
+      everyone. for brasil, hubspot migration starts may 1." Maria Silva's interview
+      flags this as SEA-weighted/optimistic (she expects mid-July) — a known nuance.
+
+  # ---- email (customer ownership) ------------------------------------------
+  - id: email-cosmos-owner
+    format: email
+    kind: link
+    link_type: owns
+    from: Marcus Lee
+    to: Cosmos Hotels
+    subject: Cosmos Hotels
+    predicate: owned_by
+    value: Marcus Lee
+    as_of: 2026-03-14
+    source_uri: data/email/cosmos-hotels-debrief.md
+    recall_bar: true
+    note: >-
+      cosmos-hotels-debrief.md: Marcus Lee (Enterprise AE) owns the Cosmos Hotels
+      relationship and writes the loss debrief. Cosmos churned (SGD 120K ARR) to a
+      competitor over multi-property reporting.
+
+  - id: email-acai-owner
+    format: email
+    kind: link
+    link_type: owns
+    from: Maria Santos
+    to: Açaí Express SP
+    subject: Açaí Express SP
+    predicate: owned_by
+    value: Maria Santos
+    as_of: 2026-04-14
+    source_uri: data/email/customer-acai-express-thread.md
+    recall_bar: true
+    note: >-
+      customer-acai-express-thread.md: Maria Santos (Head of CS, Brasil) owns the Açaí
+      Express SP relationship (handles the escalation). NAME TRAP: Maria Santos (CS) is
+      NOT Maria Silva (Head of Sales Brasil).
+
+  # ---- code ----------------------------------------------------------------
+  - id: code-core-top-contributor
+    format: code
+    kind: claim
+    subject: "helixpay/core"
+    predicate: top_contributor
+    value: Sara Wijaya
+    as_of: 2026-03-31
+    source_uri: data/code/contributors-analysis-q1-2026.md
+    recall_bar: true
+    note: >-
+      contributors-analysis-q1-2026.md: in helixpay/core, Sara Wijaya led Q1 with 89
+      commits (merchant_id schema design + migration). NAME TRAP: "Daniel Tan" and
+      "Tan Wei Ming" both appear and are different people.
+
+  # ---- interview (Q&A) -----------------------------------------------------
+  - id: interview-brasil-revenue
+    format: interview
+    kind: claim
+    subject: HelixPay Brasil
+    predicate: revenue
+    value: "SGD 4.8M"
+    as_of: 2026-03-31
+    source_uri: data/interviews/sales/maria-silva.md
+    recall_bar: true
+    note: >-
+      maria-silva.md (Head of Sales Brasil): "we did four point eight million sgd
+      against a target of six" for Q1 Brasil. Matches the dashboard region table
+      (Brasil SGD-equiv 4.8M). Interview opens with the Maria Silva/Santos name trap.
+
+  # ---- org chart (markdown) — reporting lines ------------------------------
+  - id: org-daniel-reports-arjun
+    format: md
+    kind: link
+    link_type: reports_to
+    from: Daniel Tan
+    to: Arjun Kapoor
+    subject: Daniel Tan
+    predicate: reports_to
+    value: Arjun Kapoor
+    as_of: 2026-04-15
+    source_uri: data/org-chart.md
+    recall_bar: true
+    note: >-
+      org-chart.md: Engineering is "under Arjun Kapoor, CTO"; Daniel Tan is VP
+      Engineering. Daniel Tan → Arjun Kapoor → Wei Chen (CEO).
+
+  - id: org-sara-reports-daniel
+    format: md
+    kind: link
+    link_type: reports_to
+    from: Sara Wijaya
+    to: Daniel Tan
+    subject: Sara Wijaya
+    predicate: reports_to
+    value: Daniel Tan
+    as_of: 2026-04-15
+    source_uri: data/org-chart.md
+    recall_bar: true
+    note: 'org-chart.md: Sara Wijaya (Backend Lead, Core) nested under Daniel Tan (VP Eng).'
+
+  - id: org-headcount
+    format: md
+    kind: claim
+    subject: HelixPay
+    predicate: headcount
+    value: "274"
+    as_of: 2026-04-15
+    source_uri: data/org-chart.md
+    recall_bar: true
+    note: >-
+      org-chart.md frontmatter: "Headcount as of export: 274" (exported 2026-04-15).
+      overview.md says "around 275" — a soft ~1-person discrepancy, not graded as a
+      contradiction (approximate vs exact). The org-chart 274 is the precise figure.
+
+  # ---- image (caption-level only — SPEC §11 scope cut; informational) -------
+  - id: image-revenue-trend-caption
+    format: image
+    kind: claim
+    subject: HelixPay
+    predicate: chart_caption
+    value: "Revenue by region (SGD M)"
+    as_of: 2026-03-31
+    source_uri: data/images/revenue-trend-q1-2026.jpeg
+    recall_bar: false
+    note: >-
+      revenue-trend-q1-2026.jpeg title "HelixPay — Revenue by region (SGD M)", source
+      line "FP&A · Q1 2026 close". recall_bar:false — deep figure extraction is a
+      deliberate scope cut (caption-level only), so this is informational, not graded.
+
+# Real planted contradictions — coexisting claims that must be surfaced, never
+# silently resolved (CLAUDE.md ontology rules). Each references fact ids above.
+contradictions:
+  - id: confluence-ga-timeline
+    kind: temporal            # also source_disagreement: public vs internal
+    subject: Project Confluence
+    predicate: ga_target
+    claim_a: md-allhands-confluence-june     # 2026-04-15, "end of June 2026" (public)
+    claim_b: pdf-boarddeck-confluence-q3     # 2026-05-12, "end of Q3 2026" (internal/board)
+    corroborating_sources:
+      - data/weekly-review-2026-04-21.md     # "slipping ... end of Q3 (September), not end of Q2 (June)"
+      - data/board-update-2026-04-22.md      # "re-baselining ... from end-of-Q2 to end-of-Q3"
+      - data/interviews/leadership/Daniel_Tan.md  # "realistic ga is late august to mid september ... september thirty"
+    expected: surfaced
+    note: >-
+      THE primary planted contradiction. Public all-hands stance (June/end-Q2) vs the
+      internal/board reality (end-Q3/~Sep 30). Four independent dated sources support
+      Q3; the board deck explicitly flags that the all-hands stance was unchanged. A
+      correct answer surfaces BOTH, attributes each side, and prefers the freshest
+      (Q3) while noting the change. This is temporal + source_disagreement.
+
+  - id: nps-framing
+    kind: source_disagreement
+    subject: HelixPay
+    predicate: nps
+    claim_a: html-dashboard-nps               # aggregate 47 (the honest figure)
+    claim_b: null                             # the "62" headline framing (all-hands)
+    corroborating_sources:
+      - data/all-hands-2026-04-15.md          # 62 (SEA-enterprise) used as the headline
+      - data/board-update-2026-04-22.md       # "the aggregate (47) is the more honest framing"
+      - data/weekly-review-2026-04-21.md      # "Marco wants us to lead with the aggregate"
+    expected: surfaced_or_explained
+    note: >-
+      Secondary, softer contradiction: the all-hands led with NPS 62 (SEA-enterprise
+      segment) while the aggregate is 47. Not a value conflict on the same predicate —
+      a framing/segment disagreement. A correct answer distinguishes aggregate (47)
+      from the SEA-enterprise segment (62) with sources, rather than reporting one as
+      "the" NPS. Used by the nps-framing question; not part of the recall denominator.
+
+# Note for the grader / fixer (filed, not silently assumed):
+# The SPEC §8 example golden set and the gate query fixture (helixpay/seed/fixtures.py)
+# assume a Q1 REVENUE conflict (dashboard 14.2M vs board-deck 13.9M). In the raw data,
+# revenue is 14.2M in EVERY source — the 13.9M is synthetic fixture data and exists
+# nowhere in data/. The real planted contradiction is the Confluence GA timeline above.
+# The fixture's synthetic conflict is fine as a dev aid for Agent 3 but must NOT be
+# treated as ground truth. See eval/README.md.

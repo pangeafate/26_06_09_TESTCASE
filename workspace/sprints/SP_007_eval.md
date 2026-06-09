@@ -226,15 +226,8 @@ strongest guard against a half-built system being passed off as done.
 
 ### Pre-Implementation Review
 
-- **Iteration 1** (2026-06-09): architect-reviewer (independent, plan + raw `data/` + contracts).
-  Found 1 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOW. Files reviewed:
-  workspace/sprints/SP_007_eval.md, HELIXPAY_BUILD_SPEC.md §8, helixpay/contracts/query.py,
-  helixpay/contracts/repository.py, helixpay/seed/fixtures.py, data/all-hands-2026-04-15.md,
-  data/board-deck-q1-2026.pdf, data/dashboards/april-2026-kpi-dashboard.html.
-- **Iteration 2** (2026-06-09): code-reviewer (independent, plan + harness design). Found
-  0 CRITICAL, 2 HIGH, 3 MEDIUM, 2 LOW. Files reviewed: workspace/sprints/SP_007_eval.md,
-  helixpay/contracts/models.py, helixpay/contracts/repository.py, helixpay/seed/run_seed.py,
-  test/conftest.py, helixpay/seed/metric_vocab.py.
+- **Iteration 1** (2026-06-09): architect-reviewer (independent, plan + raw `data/` + contracts) found 1 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOW. Files reviewed: workspace/sprints/SP_007_eval.md, HELIXPAY_BUILD_SPEC.md §8, helixpay/contracts/query.py, helixpay/contracts/repository.py, helixpay/seed/fixtures.py, data/all-hands-2026-04-15.md, data/board-deck-q1-2026.pdf, data/dashboards/april-2026-kpi-dashboard.html.
+- **Iteration 2** (2026-06-09): code-reviewer (independent, plan + harness design) found 0 CRITICAL, 2 HIGH, 3 MEDIUM, 2 LOW. Files reviewed: workspace/sprints/SP_007_eval.md, helixpay/contracts/models.py, helixpay/contracts/repository.py, helixpay/seed/run_seed.py, test/conftest.py, helixpay/seed/metric_vocab.py.
 
 **Resolution — All CRITICAL and HIGH addressed:**
 
@@ -269,14 +262,8 @@ strongest guard against a half-built system being passed off as done.
 
 ### Post-Implementation Review
 
-- **Iteration 1** (2026-06-09): code-reviewer (plan-blind) over only the changed code +
-  tests. Found 0 CRITICAL, 1 HIGH, 3 MEDIUM, 2 LOW. Files reviewed: eval/run.py,
-  eval/models.py, test/golden/test_harness.py, test/golden/test_golden.py,
-  test/golden/test_integration.py, test/golden/facts.yaml, eval/questions.yaml.
-- **Iteration 2** (2026-06-09): self-review with runtime evidence (live harness run
-  against a seeded pgvector container + injected stub engine; `uv run pytest test/golden`
-  29 green; `uv run mypy eval` clean). Found 0 CRITICAL/HIGH, 1 MEDIUM, 1 LOW. Files
-  reviewed: eval/run.py (matching + verdict logic), test/golden/test_harness.py.
+- **Iteration 1** (2026-06-09): code-reviewer (plan-blind, changed code + tests only) found 0 CRITICAL, 1 HIGH, 3 MEDIUM, 2 LOW. Files reviewed: eval/run.py, eval/models.py, test/golden/test_harness.py, test/golden/test_golden.py, test/golden/test_integration.py, test/golden/facts.yaml, eval/questions.yaml.
+- **Iteration 2** (2026-06-09): self-review with runtime evidence (live harness run on a seeded pgvector container + injected stub engine; pytest 29 green; mypy eval clean) found 0 CRITICAL/HIGH, 1 MEDIUM, 1 LOW. Files reviewed: eval/run.py, test/golden/test_harness.py.
 
 **Resolution — All CRITICAL and HIGH addressed:**
 1. **H-1 (duplicate id could silently mask a fact/question — a wrong oracle).**
