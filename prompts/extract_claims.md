@@ -30,7 +30,8 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
   when the text gives one (dashboards stamp an "As of" date; tables say "Q1 2026");
   otherwise fall back to the document as_of above. Omit only if truly undated.
 - `confidence`: 0.0–1.0, how clearly the span states this.
-- `evidence`: the short quote from this span that supports the claim (for provenance).
+- `evidence`: a **verbatim** quote copied from this span that contains the value (do not
+  paraphrase the number — copy it exactly; this span is checked against the source).
 - `hypothetical`: **`true`** if the value is counterfactual, hypothetical, a target/plan,
   or a "would have been" — e.g. "the renewal *would have been* SGD 165K", "if we'd closed".
   These are NOT asserted facts and must be flagged so they are not stored as competing
@@ -61,8 +62,9 @@ required). It must match this shape exactly:
 ```
 {
   "claims": [
-    {"subject": "...", "subject_type": "metric", "predicate": "...", "object_value": "...",
-     "as_of": "YYYY-MM-DD", "confidence": 0.0, "evidence": "...", "hypothetical": false}
+    {"subject": "...", "subject_type": "metric", "predicate": "...",
+     "evidence": "<verbatim quote from the span containing the value>",
+     "object_value": "...", "as_of": "YYYY-MM-DD", "confidence": 0.0, "hypothetical": false}
   ],
   "relations": [
     {"from_entity": "...", "to_entity": "...", "link_type": "reports_to",

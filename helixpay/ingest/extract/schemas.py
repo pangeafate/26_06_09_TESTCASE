@@ -33,15 +33,21 @@ def parse_as_of(raw: Optional[str]) -> Optional[date]:
 
 
 class ClaimOut(BaseModel):
-    """A candidate property value the model asserts about a subject mention."""
+    """A candidate property value the model asserts about a subject mention.
+
+    Field order is deliberate: ``evidence`` comes **before** ``object_value``/``confidence``
+    so the model commits to a verbatim grounding span *before* it emits the value and its
+    self-assessed confidence (generation-order effect, arXiv 2501.10868). The pydantic
+    field order is mirrored in the prompt's JSON example.
+    """
 
     subject: str
     subject_type: Optional[str] = None
     predicate: str
+    evidence: Optional[str] = None  # verbatim span grounding the claim (precedes the value)
     object_value: Optional[str] = None
     as_of: Optional[str] = None
     confidence: float = 0.5
-    evidence: Optional[str] = None
     # The model flags hypotheticals/counterfactuals ("would have been") so we never
     # persist them as competing facts (they create false contradictions — Stage-3 H1).
     hypothetical: bool = False

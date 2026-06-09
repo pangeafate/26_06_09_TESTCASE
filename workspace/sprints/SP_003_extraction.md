@@ -383,6 +383,37 @@ resolution accuracy on the name traps, contradictions found, and any new gotchas
 ### Post-Implementation Review
 - **Iteration 1** (2026-06-09): code-reviewer + debugger, both plan-blind (code+tests only, no plan). Combined they found 2 CRITICAL, 4 HIGH, ~6 MEDIUM, several LOW. Files reviewed: helixpay/ingest/{embed,pipeline,resolve,contradict}.py, helixpay/ingest/extract/{schemas,prompts,llm,extractor}.py, prompts/extract_claims.md, test/unit/ingest/*, test/integration/ingest/*.
 - **Iteration 2** (2026-06-09): code-reviewer, plan-blind. Found 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW. Files reviewed: same source + tests.
+- **Iteration 3** (2026-06-10): code-reviewer, plan-blind, over the research-driven enhancement round (gleaning + grounding gate + schema reorder). Found 0 CRITICAL, 1 HIGH, 1 MEDIUM, 2 LOW. Files reviewed: helixpay/ingest/extract/{extractor,grounding,schemas}.py, prompts/{extract_claims,glean_claims}.md, helixpay/ingest/pipeline.py, test/unit/ingest/{test_extractor,test_grounding}.py. Resolved: HIGH — `grounding._NUM_CANDIDATE` matched a digit inside a token (`Q1`→`1`), added a `(?<![A-Za-z\d])` lookbehind (mirrors `_PURE_NUM_RE`) + test; MEDIUM — `_claim_key` omitted `as_of`, so gleaning could collapse a same-value/different-date claim — added `as_of` to the key + test; LOW — added relation-dedup, multi-pass-both-add tests. Re-verified: 110 passed / 14 skipped, mypy clean (27 files), DB integration green against a live pgvector container.
+
+## Research-Driven Enhancements (post-gate, validated round — 2026-06-10)
+
+After a GitHub/literature best-practices report (`research/extraction-design-and-best-practices.md`)
+compared this design against Graphiti/GraphRAG/etc., I validated each recommendation with three
+independent subagents (against the *frozen contracts*), then implemented the validated subset:
+
+- **Gleaning (recall) — IMPLEMENTED.** Optional fixed follow-up extraction passes feed the
+  already-extracted items back ("what's missing?") and merge new ones (deduped on
+  `(subject, predicate, object_value, as_of)`). Off by default (`glean_passes=0`); production
+  ingest sets `1`. Token-budget guard; a failed/empty gleaning pass stops the loop and never
+  discards the base pass. New named prompt `prompts/glean_claims.md` (no inlined prompt).
+- **Evidence grounding gate (precision) — IMPLEMENTED, narrowed.** `extract/grounding.py`
+  grades each claim's value restorability against its cited evidence span (reusing
+  `normalize_value`) + span-locality in the chunk. A subagent correctly flagged the report's
+  "hard-drop" version as **net-negative for recall** (dashboard value/label/as-of live in
+  separate DOM nodes), so the gate **flags-and-penalizes confidence, never drops**, and
+  excludes `as_of` from grading. `evidence` stays Optional in the schema (required in the
+  prompt).
+- **Schema field reorder (LOW) — IMPLEMENTED.** `ClaimOut` emits `evidence` before
+  `object_value`/`confidence` (generation-order effect); prompt JSON example matched.
+- **Embedding-ANN entity resolution (MEDIUM) — DEFERRED (contract-blocked).** The frozen
+  `entities` table has no embedding column and `Repository` exposes no list/ANN-entities
+  method, so this needs a gate re-freeze. **Proposed contract change** for the orchestrator:
+  add `entities.embedding VECTOR(1024)` (+ HNSW) and a
+  `Repository.search_entities(qvec, k, entity_type=None) -> list[tuple[Entity, float]]` method.
+- **NLI semantic contradictions (LOW) — DEFERRED** (only if eval shows missed non-numeric
+  contradictions; avoids a heavy model dependency).
+- **Don't gate on self-reported confidence / don't auto-resolve contradictions — CONFIRMED
+  COMPLIANT** in code (confidence stored-only; contradictions surfaced, never resolved).
 
 **Resolution — all CRITICAL/HIGH fixed; tests added; full suite re-run green (incl. against a live pgvector container):**
 1. **`normalize_value` parsing defects (CRITICAL):** the old `_NUM_RE` pulled a stray digit from labels and treated `"18 months"` as `18M`, ignored the Unicode minus `−` (U+2212), and turned `"Q1 2026"` into `1.0`. Replaced with a **pure-number gate** (numeric only when the whole cleaned string is a number) + Unicode-minus normalization (applied to both the numeric and the text-comparison path). New tests: `18 months ≠ 18M`, `Q1 2026/v1.0 non-numeric`, `−11% == -11%`, unicode-minus text fallback.

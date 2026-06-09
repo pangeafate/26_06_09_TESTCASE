@@ -92,7 +92,9 @@ def run(
     if extractor is None:
         from helixpay.ingest.extract.llm import AnthropicClient  # noqa: PLC0415
 
-        ext: _Extractor = ChunkExtractor(AnthropicClient())
+        # production default: one gleaning pass for recall (off in unit tests, which inject
+        # their own extractor)
+        ext: _Extractor = ChunkExtractor(AnthropicClient(), glean_passes=1)
     else:
         ext = extractor
 
