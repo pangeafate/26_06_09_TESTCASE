@@ -115,6 +115,51 @@ def _read_tier(plan_text: str) -> str | None:
     return tier.strip().lower() if isinstance(tier, str) and tier.strip() else None
 
 
+# Sprint-plan status enum (SPRINT_PLAN.md template + HelixPay `Done` close-out).
+_KNOWN_STATUSES = frozenset(
+    {"planning", "in progress", "complete", "done", "abandoned"}
+)
+
+
+def _read_status(plan_text: str) -> str | None:
+    """Return the raw `status` frontmatter value (trimmed), or None when absent
+    or blank. Malformed frontmatter → None (syntax is policed elsewhere)."""
+    try:
+        fm = _parse_text(plan_text, Path("<plan>"))
+    except FrontmatterParseError:
+        return None
+    status = fm.get("status")
+    return status.strip() if isinstance(status, str) and status.strip() else None
+
+
+def check_status_declared(sprint_id: str, plan_text: str) -> None:
+    """F-3 (DEV_REINFORCE) — advisory: the active plan should declare a `status`
+    frontmatter field with a known value.
+
+    A plan that omits `status` (SP_004 shipped with none) breaks the coordination
+    bus — the orchestrator cannot tell 'still building' from 'done, forgot to
+    flip'. This is an ADVISORY WARN, not a FAIL: making `status` mandatory would
+    break historical frontmatter-less plans. The hard 'Definition of Done' check
+    (status: Done + delivery section) belongs in a dedicated hand-off gate; this
+    surfaces the gap without blocking. Never changes the exit code.
+    """
+    status = _read_status(plan_text)
+    if status is None:
+        print(
+            f"[Stage 1b] ADVISORY: sprint {sprint_id} plan declares no `status` "
+            f"frontmatter field (DEV_REINFORCE F-3). Add `status: In Progress` "
+            f"(or Done at close-out) so the coordination bus stays honest.",
+            file=sys.stderr,
+        )
+    elif status.lower() not in _KNOWN_STATUSES:
+        print(
+            f"[Stage 1b] ADVISORY: sprint {sprint_id} declares unrecognized status "
+            f"'{status}' — expected one of "
+            f"Planning | In Progress | Complete | Done | Abandoned (DEV_REINFORCE F-3).",
+            file=sys.stderr,
+        )
+
+
 def _review_floor(tier: str | None) -> int:
     """Map a (lowercased) tier to its minimum review-iteration floor.
 
@@ -410,6 +455,9 @@ def main(argv: list[str]) -> int:
         f"[Info] Tier: {tier or 'unspecified'} → review iteration floor: {floor}",
         file=sys.stderr,
     )
+
+    # Stage 1b — status-declaration advisory (DEV_REINFORCE F-3, non-blocking)
+    check_status_declared(sprint_id, plan_text)
 
     # Stage 2 — always checked
     if not stage2_required_sections(sprint_id, plan_text):

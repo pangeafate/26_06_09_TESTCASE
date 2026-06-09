@@ -20,3 +20,7 @@ coverage.xml
 # its own nested .git, so ignore it here to avoid an embedded repo.
 DEV_RULES/
 .docs_reconciled
+
+# Agent-private git worktrees (DEV_REINFORCE F-6) and IDE settings — never tracked.
+.claude/worktrees/
+.idea/

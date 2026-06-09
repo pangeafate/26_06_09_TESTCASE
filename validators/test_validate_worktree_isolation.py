@@ -347,3 +347,69 @@ def test_malformed_plan_does_not_crash(project: Path) -> None:
     _write_plan(s, "SP_051", touches_paths=["src/b/"])
     r = _run(project)
     assert r.returncode == 0, r.stderr
+
+
+# --------------------------------------------------------------------------- #
+# WI-4 orphan worktrees (DEV_REINFORCE F-6)
+# --------------------------------------------------------------------------- #
+
+def _make_worktree(project: Path, name: str) -> None:
+    (project / ".claude" / "worktrees" / name).mkdir(parents=True, exist_ok=True)
+
+
+def test_orphan_worktree_warns(project: Path) -> None:
+    """A worktree dir mapping to no active sprint is a WI-4 WARN (never FAIL)."""
+    _write_plan(
+        _sprints(project), "SP_002",
+        isolation="git-worktree", branch="sprint/SP_002-x",
+        worktree=".claude/worktrees/SP_002", touches_paths=["src/a/"],
+    )
+    _make_worktree(project, "SP_002")            # live, maps to active sprint
+    _make_worktree(project, "agent-a250bc459329ca86e")  # orphan
+    r = _run(project)
+    assert r.returncode == 0, r.stderr           # WARN must not block
+    assert "WI-4" in r.stdout
+    assert "agent-a250bc459329ca86e" in r.stdout
+
+
+def test_worktree_for_active_sprint_not_flagged(project: Path) -> None:
+    """A worktree whose name carries an active sprint id is not an orphan."""
+    _write_plan(
+        _sprints(project), "SP_003",
+        isolation="git-worktree", branch="sprint/SP_003-y",
+        worktree=".claude/worktrees/SP_003", touches_paths=["src/b/"],
+    )
+    _make_worktree(project, "SP_003")
+    r = _run(project)
+    assert r.returncode == 0, r.stderr
+    assert "WI-4] WARN" not in r.stdout
+
+
+def test_orphan_worktree_warns_even_with_no_active_sprint(project: Path) -> None:
+    """Orphans surface even when nothing is In Progress."""
+    _write_plan(_sprints(project), "SP_001", status="Complete")
+    _make_worktree(project, "agent-stray")
+    r = _run(project)
+    assert r.returncode == 0
+    assert "no In Progress" in r.stdout
+    assert "agent-stray" in r.stdout
+
+
+def test_no_worktrees_dir_is_clean(project: Path) -> None:
+    """No `.claude/worktrees/` dir → no WI-4 noise."""
+    _write_plan(_sprints(project), "SP_004", touches_paths=["src/c/"])
+    r = _run(project)
+    assert r.returncode == 0, r.stderr
+    assert "WI-4] WARN" not in r.stdout
+
+
+def test_sprint_convention_worktree_not_flagged_when_plan_off_main(project: Path) -> None:
+    """During a fan-out a sprint's plan lives in its own worktree, not on main,
+    so an `SP_<id>` worktree with no main-visible active plan is NOT a stray."""
+    _write_plan(_sprints(project), "SP_001", status="Complete")  # nothing In Progress
+    _make_worktree(project, "SP_042-extraction")  # convention-named, plan off-main
+    _make_worktree(project, "agent-deadbeef")     # genuine stray
+    r = _run(project)
+    assert r.returncode == 0
+    assert "SP_042-extraction" not in r.stdout    # convention → not flagged
+    assert "agent-deadbeef" in r.stdout           # stray → flagged

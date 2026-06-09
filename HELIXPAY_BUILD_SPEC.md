@@ -372,3 +372,35 @@ Idempotent, so re-running is safe — that's also the **moving-target demo**: dr
 
 ### Why this is shaped for five build agents plus a dedicated Eval agent
 Frozen contracts + a seeded deterministic backbone + disjoint file ownership = worktree agents that never collide and never re-derive the flaky parts. The gate carries the conventions the grader reads for; the five build the machinery around them. The Eval agent is deliberately separate: it authors ground truth from the raw data with no sight of the build code, so its golden set is an honest oracle and it can serve as the author-independent adversary at the end — the single highest-leverage defense against the laziness, self-preferential bias, and goal drift that would otherwise pass off a half-built system as done. It runs alongside the build and grades at integration, so it buys all of that without costing critical-path time.
+
+---
+
+## 12. Integration — the owned, gated phase (DEV_REINFORCE F-5)
+
+Contract-first fan-out makes every slice independently testable, but it pushes
+**all integration risk to a single post-merge moment**. In the first build every
+slice read green while nothing had been proven end-to-end: query was validated on
+the seeded fixture, exposure on a mock engine, eval's harness on a stub, and
+extraction had never run on the real corpus. "All slices green" said nothing about
+whether the wired system works. Integration must therefore be a *named phase with
+an owner and a gate* — not a footnote in Agent 6's brief.
+
+**Owner:** orchestrator + Agent 6 (the author-independent grader).
+
+**Definition of done — `/goal` is met only when ALL hold against real keys + DB:**
+1. The six branches merge with disjoint ownership; the one shared seam (parent
+   package `__init__.py`, pre-created per §F-1) and the dependency union
+   (`scripts/consolidate-deps.py` → `pyproject.toml`) are resolved.
+2. `make up && make ingest && make demo` is green **from a fresh clone** with only
+   env vars set.
+3. Agent 6's two-level autotest (§8) reports extraction precision/recall over the
+   golden set at or above the stated recall bar, every deep question cites
+   `source_uri` + `as_of`, and ≥1 real planted contradiction is surfaced.
+4. The deploy is reachable at the live URL; `/health` green; `/mcp` speaks
+   streamable-HTTP.
+
+**Orchestrator rule:** *slices green ≠ build done.* The integration gate is a
+separate mandatory stage; do not report `/goal` met, or deploy as done, until it
+passes. Where feasible, run one thin real end-to-end path (one document → ingest
+→ ask) *during* the build so integration risk is sampled continuously rather than
+discovered all at once at the most expensive moment.

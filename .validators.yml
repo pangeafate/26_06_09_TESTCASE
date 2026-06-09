@@ -76,6 +76,16 @@ doc_reality:
     - build
     - data          # the HelixPay dataset — input content, not authored project docs
     - DEV_RULES      # vendored governance bundle (gitignored); operative copies live at root
+    - .claude        # isolated agent worktrees live under .claude/worktrees/ — their docs
+                     # reference paths real on their own branch but not yet on main; scanning
+                     # them as if they were main's docs is the worktree-pollution failure
+                     # DEV_REINFORCE F-6 warns about. Exclude the whole agent-private tree.
+    - fanout         # Phase-1 build briefs — planning scaffolding that deliberately references
+                     # the build agents' planned deliverables (ingest/pipeline.py, the per-agent
+                     # sprint plans, test/golden/) before they merge to main. Same rationale as
+                     # the dead_path_exclusions below; the whole dir is future-state planning.
+    - research       # external reference material (extraction design notes, GraphRAG citations);
+                     # cites example/third-party paths, not authored project reality.
   dead_path_exclusions:
     - test/unit/
     - test/integration/

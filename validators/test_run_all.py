@@ -38,6 +38,7 @@ EXPECTED_ALL_VALIDATORS = [
     "validate_sprint",
     "validate_sprint_overlap",
     "validate_worktree_isolation",
+    "validate_declared_deps",
     "validate_doc_reality",
     "validate_doc_freshness",
 ]

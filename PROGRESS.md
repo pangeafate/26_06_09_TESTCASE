@@ -11,19 +11,24 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_001
+**Current:** SP_008
 **Started:** 2026-06-09
-**Stage:** Documentation
+**Stage:** Implementation
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
-SP_001 — Phase 0 Gate: freeze the shared substrate (scaffold, db/schema.sql,
-contracts/**, Postgres Repository, config.py, CLAUDE.md §7, .claude/**, the
-deterministic seed roster + metric_vocab, and the query fixture) for the
-HelixPay Ontology build (HELIXPAY_BUILD_SPEC.md §5). Plan:
-`workspace/sprints/SP_001_phase0_gate.md`. Freeze proven: contracts import,
+SP_008 — DEV_RULES Reinforcement: implement the `DEV_RULES/DEV_REINFORCE.md`
+findings from the SP_002–SP_007 fan-out (status advisory, orphan-worktree WI-4,
+declared-dependencies field + validator + consolidation script, package-root
+scaffolding practice, env pin, integration-as-owned-phase). Plan:
+`workspace/sprints/SP_008_dev_reinforce.md`. Touches the governance substrate
+(validators/, scripts/, practices/, template, build spec) — disjoint from the
+in-flight worktrees, so `isolation: shared-tree` on main is safe.
+
+Prior: SP_001 — Phase 0 Gate froze the shared substrate (contracts, schema,
+Repository, config, seed roster + metric_vocab, query fixture). Freeze proven:
 schema applies on pgvector pg16, seed loads (12 metrics / 63 entities / 99
-links), mypy clean, 38 tests green. Stage 3 + Stage 5 reviews complete.
+links), mypy clean, 38 tests green. Stages 3 + 5 complete.
 
 ## Sprint History
 

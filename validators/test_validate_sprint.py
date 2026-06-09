@@ -612,3 +612,30 @@ def test_unrecognized_tier_defaults_to_floor_two(tmp_path: Path) -> None:
     result = run_validator(tmp_path)
     assert result.returncode == 1, result.stdout
     assert "floor: 2" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# F-3 (DEV_REINFORCE) — status-declaration advisory
+# ---------------------------------------------------------------------------
+
+def test_missing_status_field_is_advised_not_failed(tmp_path: Path) -> None:
+    """A plan with no `status` frontmatter gets a Stage-1b ADVISORY, not a FAIL."""
+    sprints = make_sprints_dir(tmp_path)
+    # make_full_sprint_plan writes NO frontmatter at all → no status field.
+    make_full_sprint_plan(sprints, "SP_300", review_log=VALID_REVIEW_LOG)
+    set_active_sprint(tmp_path, "SP_300")
+    r = run_validator(tmp_path, "--gate", "full")
+    assert "Stage 1b" in r.stderr
+    assert "no `status`" in r.stderr
+    # Advisory must not be the thing that fails the gate.
+    assert "DEV_REINFORCE F-3" in r.stderr
+
+
+def test_valid_status_no_advisory(tmp_path: Path) -> None:
+    """A plan carrying a known `status` produces no Stage-1b advisory."""
+    sprints = make_sprints_dir(tmp_path)
+    make_tiered_sprint_plan(sprints, "SP_301", "Standard", review_log=VALID_REVIEW_LOG)
+    set_active_sprint(tmp_path, "SP_301")
+    r = run_validator(tmp_path, "--gate", "full")
+    assert "Stage 1b" not in r.stderr
+    assert r.returncode == 0, r.stderr

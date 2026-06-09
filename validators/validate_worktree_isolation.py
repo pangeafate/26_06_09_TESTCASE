@@ -52,6 +52,7 @@ Exit codes:
 """
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -330,14 +331,77 @@ def check_shared_tree(sprints: list[IsoSprint]) -> tuple[list[str], list[str]]:
     return failures, warnings
 
 
+# A worktree directory that follows the sprint convention: `SP_<digits>`,
+# optionally with a `-slug`/`_slug` suffix (`.claude/worktrees/SP_002`,
+# `SP_002-extraction`). Such a worktree is a legitimate sprint checkout whose
+# plan lives inside the worktree itself — invisible from `main` during a
+# fan-out — so its absence from main's active set is NOT evidence of an orphan.
+_SPRINT_WORKTREE_RE = re.compile(r"^SP_\d+([-_].*)?$", re.IGNORECASE)
+
+
+def check_orphan_worktrees(
+    project_root: Path, sprints: list[IsoSprint]
+) -> list[str]:
+    """WI-4 — *stray* worktree directories under `.claude/worktrees/` (WARN).
+
+    A worktree is a stray when it neither maps to an active main-visible sprint
+    nor follows the `SP_<id>` worktree naming convention — e.g. a tool-created
+    `agent-<hash>` directory left behind and locked. It pollutes the signal the
+    isolation checks rely on (which worktrees are live) and accumulates across
+    builds.
+
+    Convention-named `SP_<id>` worktrees are deliberately NOT flagged: during a
+    fan-out each sprint's plan lives in its own worktree (not on main), so from
+    main every one of them would look orphaned. Pruning a *terminal-state*
+    sprint worktree is a separate close-out step (`make worktree-prune`), not
+    this check's job — keeping WI-4 free of false positives is what makes the
+    one real stray it does catch worth acting on.
+
+    Always a WARN — never a FAIL; escalate at integration per DEV_REINFORCE F-6.
+    """
+    warnings: list[str] = []
+    worktrees_dir = project_root / ".claude" / "worktrees"
+    try:
+        entries = sorted(p for p in worktrees_dir.iterdir() if p.is_dir())
+    except OSError:
+        return warnings  # no `.claude/worktrees/` → nothing to check
+
+    active_ids = {s.sprint_id for s in sprints}
+    declared = {
+        Path(s.worktree.rstrip("/")).name for s in sprints if s.worktree
+    }
+
+    for entry in entries:
+        name = entry.name
+        if name in declared or any(sid and sid in name for sid in active_ids):
+            continue
+        if _SPRINT_WORKTREE_RE.match(name):
+            continue  # follows the SP_<id> convention — plan lives in its worktree
+        warnings.append(
+            f"[Stage WI-4] WARN: worktree '{entry}' is a stray — it maps to no "
+            f"active sprint and does not follow the `SP_<id>` worktree convention "
+            f"(likely a leftover tool worktree). Prune it (`git worktree remove`) "
+            f"so it does not pollute the isolation signal "
+            f"(GL-PARALLEL-ISOLATION.md / DEV_REINFORCE F-6)."
+        )
+    return warnings
+
+
 def validate(project_root: Path) -> int:
     sprints = _load_active(project_root)
+
+    # WI-4 runs regardless of active-sprint count — orphans exist on disk whether
+    # or not anything is In Progress.
+    orphan_warnings = check_orphan_worktrees(project_root, sprints)
+
     if not sprints:
+        for w in orphan_warnings:
+            print(w)
         print("[Stage WI-1] PASS: no In Progress sprint plans to check.")
         return 0
 
     failures: list[str] = []
-    warnings: list[str] = []
+    warnings: list[str] = list(orphan_warnings)
 
     decl_fail, decl_warn = check_declarations(sprints)
     failures += decl_fail
@@ -359,7 +423,8 @@ def validate(project_root: Path) -> int:
 
     print(
         f"[Stage WI] PASS: {len(sprints)} In Progress plan(s) — isolation declarations "
-        f"valid (WI-1), branches/worktrees unique (WI-2), no shared-tree collisions (WI-3)."
+        f"valid (WI-1), branches/worktrees unique (WI-2), no shared-tree collisions (WI-3); "
+        f"{len(orphan_warnings)} orphan worktree(s) (WI-4)."
     )
     return 0
 
