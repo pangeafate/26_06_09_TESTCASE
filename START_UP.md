@@ -29,8 +29,9 @@ Read these files in order to build a mental model of the project:
 3. **DATA_SCHEMA.md** — Database tables, fields, and relationships
 4. **CODEBASE_STRUCTURE.md** — Directory layout, layer boundaries, naming conventions
 5. **FEATURE_LIST.md** — All implemented features with source file references
-6. **AGENT_IDENTITY.md** — Agent personality, behavioral rules, safety boundaries
-7. **AGENT_INSTRUCTIONS.md** — Development rules and deployment procedures
+6. **CLAUDE.md** — Primary rulebook: DEV_RULES governance + HelixPay project conventions
+7. **AGENTS.md** — Coding-agent adapter over the same methodology (stricter rule wins on overlap)
+8. **HELIXPAY_BUILD_SPEC.md** — What to build and in what order (the gate + build agents)
 
 <!-- Example:
 After reading these files, you should be able to answer:

@@ -1,95 +1,53 @@
 ---
 status: living
-last-reconciled: 1970-01-01
+last-reconciled: 2026-06-09
 authoritative-for: [directory-layout, layer-rules]
 ---
-<!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
 
 # Codebase Structure
 
-## Directory Layout
-
-[Tree diagram showing the top-level directory structure. Use indentation to show hierarchy.]
+## Layout (as of the Phase 0 gate)
 
 ```
-project-root/
-  [directory/]          # [Purpose]
-  [directory/]          # [Purpose]
-    [subdirectory/]     # [Purpose]
-  [file]                # [Purpose]
+helixpay/
+  __init__.py
+  config.py                 # env-only secrets + pinned model ids (no literals)
+  contracts/                # FROZEN cross-module types — import from here, never redefine
+    models.py               #   Document, Chunk, Entity, Claim, Link, Contradiction, Citation, AnswerBundle, OrgNode, EntityDetail
+    connector.py            #   SourceConnector Protocol
+    repository.py           #   Repository Protocol
+    query.py                #   QueryEngine Protocol
+  db/                       # the ONLY place with raw SQL
+    schema.sql              #   the 8-table ontology schema
+    migrate.py              #   apply schema (statement-by-statement, GL-ERROR-LOGGING)
+    connection.py           #   psycopg connection helper (dict rows)
+    repository.py           #   PostgresRepository — the one Repository impl
+  seed/                     # deterministic backbone (pure parsers + DB loaders)
+    roster.py               #   parse org-chart.md / overview.md → entities + links (NO db imports)
+    metric_vocab.py         #   controlled metric vocabulary + canonical_key()
+    run_seed.py             #   orchestrates seeding via Repository (CLI: python -m helixpay.seed.run_seed)
+    fixtures.py             #   minimal query fixture (writes via Repository)
+test/
+  conftest.py               # `db` mark auto-skips unless DATABASE_URL set (no fallback creds)
+  unit/contracts/**         # model + protocol tests (no DB)
+  unit/seed/**              # parser + vocab tests (inline fixtures; real data marked `smoke`)
+  integration/db/**         # DB-gated repository tests
+.claude/                    # commands/{ingest,verify}.md, agents/verifier.md
+pyproject.toml              # uv/hatchling, Python ≥3.12, pytest + mypy config
 ```
 
-<!-- Example:
-```
-project-root/
-  src/
-    lib/                # Shared library — domain models + services
-      task_domain.py    # Task dataclasses, enums
-      task_service.py   # Task CRUD, lifecycle operations
-    skills/             # Agent capabilities (one directory per skill)
-      example-briefing/
-        SKILL.md        # Capability definition
-        scripts/
-          main.py       # Entry point
-  test/
-    unit/               # Unit tests (mirror src/ structure)
-    integration/        # Integration tests (real API calls)
-  workspace/            # Agent configuration
-    AGENTS.md           # Agent behavioral rules
-    agent-config.json   # Runtime configuration
-  scripts/              # Deployment and utility scripts
-  docs/                 # Project documentation
-  CLAUDE.md             # AI agent instructions
-```
--->
+Owned-by-future-agents (not yet present): `ingest/` (Agent 1/2), `query/` (Agent 3),
+`mcp/` `api/` `cli.py` (Agent 4), `deploy/` `Dockerfile` `Makefile` (Agent 5),
+`eval/` `tests/golden/` `prompts/` (Agents 2/6).
 
-## Layer Boundaries
-
-[Define what code lives in each layer and the rules governing each layer.]
-
-| Layer | Location | Contains | Rules |
-|-------|----------|----------|-------|
-| [Layer name] | [Path] | [What belongs here] | [Constraints] |
-
-<!-- Example:
-| Domain | `src/lib/*_domain.py` | Dataclasses, enums, pure functions | No I/O, no imports from service layer |
-| Service | `src/lib/*_service.py` | API calls, database operations | May import domain, never imported by domain |
-| Skills | `src/skills/*/scripts/` | CLI entry points | Import from lib, never import from other skills |
-| Workspace | `workspace/` | Agent config, prompts | No Python code |
-| Tests | `test/` | Mirrors src/ structure | No production imports from test/ |
--->
-
-## Dependency Direction
-
-[Describe the import rules — which layers can import from which.]
+## Layer rules (dependencies flow inward)
 
 ```
-[Higher layer] --> [Lower layer]     (allowed)
-[Lower layer] -/-> [Higher layer]    (forbidden)
+capabilities (ingest, query, mcp, api, seed)  →  shared logic (contracts)  →  models
+infrastructure (db) stands alone behind the Repository seam.
 ```
 
-<!-- Example:
-```
-Skills --> Lib (Domain + Service)    (allowed)
-Service --> Domain                   (allowed)
-Domain -/-> Service                  (forbidden)
-Skills -/-> Skills                   (forbidden — no cross-skill imports)
-Tests --> Any                        (allowed)
-```
--->
-
-## Naming Conventions
-
-| Element | Convention | Example |
-|---------|-----------|---------|
-| [File type] | [Pattern] | [Concrete example] |
-
-<!-- Example:
-| Domain module | `{noun}_domain.py` | `task_domain.py` |
-| Service module | `{noun}_service.py` | `task_service.py` |
-| Test file | `test_{module_name}.py` | `test_task_domain.py` |
-| Skill directory | `{agent}-{action}` | `example-briefing` |
-| Enum class | `PascalCase` | `TaskStatus` |
-| Dataclass | `PascalCase` | `TaskItem` |
-| Function | `snake_case` verb-first | `create_task()`, `query_active_tasks()` |
--->
+- **Cross-module types live only in `helixpay/contracts/`** and are never redefined.
+- **All DB access goes through `Repository`; raw SQL only in `helixpay/db/`.**
+- **Secrets only from env** (`helixpay/config.py`); never hardcode or log them.
+- Tests mirror the package under `test/unit/**` and `test/integration/**`.

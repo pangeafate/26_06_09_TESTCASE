@@ -1,89 +1,61 @@
 ---
 status: living
-last-reconciled: 1970-01-01
+last-reconciled: 2026-06-09
 authoritative-for: [system-design, components]
 ---
-<!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
 
 # Architecture
 
-## System Overview
+Full design rationale: `HELIXPAY_BUILD_SPEC.md` §2. This file records what the
+Phase 0 gate established.
 
-[High-level diagram of the system. Use ASCII art or a Mermaid diagram to show major components and their connections.]
+## Thesis
 
-<!-- Example:
+This is an **ontology-construction** task, not a RAG task. Naive "chunk → embed →
+vector search → LLM" fails on hierarchy, staleness, aliases, and contradictions. So
+we build a **temporal, provenance-carrying ontology** at ingest, with hybrid
+retrieval underneath it. Borrowed from Palantir's ontology (typed objects + links +
+properties, full provenance, world-model-constrains-the-LLM) with one deliberate
+inversion: we do **not** collapse to a golden record — every value is a `Claim` and
+**contradictions are first-class objects**.
+
+## Layers
+
 ```
- Chat Platform API
-       |
-   [Agent Runtime]
-       |
-  +---------+---------+
-  |         |         |
-Skills    Lib     Workspace
-  |         |
-  +----+----+
-       |
-   [Database]
+ingestion/extraction  →  storage (one Postgres behind one Repository)  →  query/reasoning (ask)  →  exposure (lib/CLI/HTTP/MCP)
 ```
--->
 
-## Components
+- **Storage:** a single Postgres (`pgvector` semantic + native FTS lexical +
+  recursive CTEs for hierarchy). Chosen for the live-in-production requirement and
+  single-store operational simplicity — not for performance (the corpus is tiny).
+- **The Repository seam:** every component depends on the `Repository` Protocol;
+  the one `PostgresRepository` impl confines all SQL to `helixpay/db/`.
+- **Frozen contracts:** `helixpay/contracts/` holds the four Protocols + models that
+  every build agent codes against. They are frozen at the gate so the parallel
+  agents never collide on shared types.
 
-### [Component Name]
+## Deterministic backbone (de-risks the two flakiest LLM steps)
 
-- **Purpose**: [What this component does]
-- **Technology**: [Language, framework, runtime]
-- **Dependencies**: [What it depends on]
-- **Key files**: [Entry points or important paths]
+- **Seed roster** — `org-chart.md` + `overview.md` parsed into a canonical set of
+  people/teams/links. Entity resolution matches messy mentions against this fixed
+  roster (roster-first), keeping the planted name traps distinct (two Marias, two
+  Tans) and making the hierarchy deterministic.
+- **Metric vocabulary** — a controlled vocab (`metric_vocab`) so "ARR" and "annual
+  recurring revenue" canonicalize to one predicate; without it, contradiction
+  detection silently no-ops.
 
-<!-- Example:
-### Agent Runtime
+## Components built at the gate
 
-- **Purpose**: Orchestrates pipeline stages, routes messages, executes skills
-- **Technology**: Python 3.13, your-agent-platform framework
-- **Dependencies**: Chat Platform API, Database REST API
-- **Key files**: `workspace/agent-config.json`, `workspace/AGENTS.md`
+| Component | File(s) | Role |
+|-----------|---------|------|
+| Contracts | `helixpay/contracts/**` | frozen models + Protocols |
+| Schema | `helixpay/db/schema.sql` | 8-table ontology (see `DATA_SCHEMA.md`) |
+| Repository | `helixpay/db/repository.py` | the one storage impl (idempotent, temporal) |
+| Config | `helixpay/config.py` | env secrets + pinned models |
+| Seed | `helixpay/seed/**` | roster + metric_vocab + query fixture |
 
-### Skills Layer
+## Out of scope (see `SOLUTION.md` when written)
 
-- **Purpose**: Executable tools the agent invokes to perform discrete actions
-- **Technology**: Python CLI scripts with argparse
-- **Dependencies**: Shared library (`src/lib/`)
-- **Key files**: `src/skills/*/SKILL.md`, `src/skills/*/scripts/`
--->
-
-## External Services
-
-| Service | Purpose | Protocol | Auth Method |
-|---------|---------|----------|-------------|
-| [Service name] | [What it provides] | [REST/gRPC/SQL/etc.] | [Token/OAuth/etc.] |
-
-<!-- Example:
-| Database | System of record for all project data | REST API | Database token |
-| Chat Platform API | User interaction channel | HTTPS webhook | Bot token |
-| Google Drive | Document storage | REST API | Service account |
--->
-
-## Data Flow
-
-[Describe how data moves through the system from input to output. Include the main flows.]
-
-<!-- Example:
-1. User sends message via chat platform
-2. Agent runtime receives webhook, runs pipeline stages
-3. Pipeline invokes relevant skill(s) via CLI
-4. Skills read/write database via shared library services
-5. Results formatted and returned to user via chat platform
--->
-
-## Key Design Decisions
-
-| Decision | Rationale | Alternatives Considered |
-|----------|-----------|------------------------|
-| [Decision made] | [Why this choice] | [What else was evaluated] |
-
-<!-- Example:
-| Domain + Service pairs | Separates business logic from I/O; testable without mocks | Single-file modules (rejected: grew too large) |
-| CLI-based skills | Agent runtime invokes via subprocess; language-agnostic | In-process function calls (rejected: coupling) |
-| Database-with-UI over raw SQL | Low-ops, UI for manual inspection, REST API | Raw Postgres (rejected: no built-in UI) |
--->
+Palantir's kinetic layer (writeback/actions); row-level/multi-tenant security; live
+ingestion (the `SourceConnector` seam is the add-point); deep JPEG figure extraction
+(caption-level); trained cross-encoder reranker (RRF instead).

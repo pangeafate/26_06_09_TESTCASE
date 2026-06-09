@@ -1,79 +1,61 @@
 ---
 status: living
-last-reconciled: 1970-01-01
+last-reconciled: 2026-06-09
 authoritative-for: [schema]
 ---
-<!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
 
 # Data Schema
 
+The ontology schema lives in `helixpay/db/schema.sql` (applied by
+`helixpay/db/migrate.py` onto `pgvector/pgvector:pg16`). It is a **temporal,
+provenance-carrying** model: property values are *claims* (conflicting values
+coexist, never collapsed), contradictions are first-class rows, and superseded
+facts are kept (`valid_to` / `superseded_by`), never deleted.
+
 ## Database
 
-- **Type**: [Database technology — e.g., PostgreSQL, SQLite, MongoDB, or a database-with-UI platform]
-- **Version**: [Version if relevant]
-
-## Connection
-
-- **Method**: [How to connect — REST API, connection string, SDK]
-- **Credentials**: [Where credentials are stored — environment variable name, secrets file path. Never put actual credentials here.]
-- **Base URL / Host**: [Connection endpoint placeholder]
-
-<!-- Example:
-- **Method**: REST API via `https://<host>/api/`
-- **Credentials**: Database token stored in `DATABASE_TOKEN` environment variable
-- **Base URL / Host**: `https://database.example.com`
--->
+- **Type**: PostgreSQL 16 + `pgvector` extension (semantic) + native FTS (lexical).
+- **Connection**: `DATABASE_URL` env var only (via `helixpay/config.py`); psycopg 3.
+- **Access**: exclusively through `helixpay/db/repository.py` (`PostgresRepository`).
+  No raw SQL outside `helixpay/db/`.
 
 ## Tables
 
-### [Table Name]
-
-- **ID**: [Table identifier if applicable]
-- **Purpose**: [What data this table stores]
-- **Owner**: [Which agent/component owns writes to this table]
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| [field_name] | [text/number/boolean/date/single_select/link_row/...] | [Yes/No] | [What this field represents] |
-
-<!-- Example:
-### tasks
-
-- **ID**: 613
-- **Purpose**: All tracked tasks with lifecycle state
-- **Owner**: Operations agent
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| id | auto_increment | Yes | Primary key |
-| title | text | Yes | Human-readable task name |
-| status | single_select | Yes | Current lifecycle state (open/in_progress/done/stale/cancelled) |
-| priority | number | No | Numeric priority (1=highest) |
-| owner_chat_id | number | Yes | Chat ID of the task owner |
-| due_date | date | No | When this task is due |
-| created_on | date | Yes | Auto-set on creation |
-| stale_immune | boolean | No | If true, skip stale detection |
--->
+| Table | Purpose | Key columns / constraints |
+|-------|---------|---------------------------|
+| `documents` | Raw provenance, content-addressed | `content_hash` UNIQUE → ingestion idempotency; `source_type`, `as_of` |
+| `chunks` | Retrievable spans | `embedding VECTOR(1024)` (HNSW); `tsv` GENERATED tsvector (GIN); `UNIQUE(document_id, ordinal)` |
+| `entities` | person/team/customer/product/metric/other | `UNIQUE(canonical_name, entity_type)`; `seeded` flags roster rows |
+| `entity_aliases` | Surface forms → entity | `UNIQUE(entity_id, alias)`; `lower(alias)` index |
+| `metric_vocab` | Controlled predicate vocabulary | `canonical_key` PK; `aliases TEXT[]` |
+| `claims` | The claim/assertion model | partial-UNIQUE natural key `(COALESCE(subject,-1), predicate, COALESCE(object_value,''), COALESCE(source_chunk_id,-1))`; temporal cols + `superseded_by` |
+| `links` | Typed relations incl. org hierarchy | `link_type` ∈ `reports_to \| dotted_line_to \| owns \| member_of \| mentions`; unique index on `(from,to,type,COALESCE(as_of,…))` |
+| `contradictions` | First-class conflict objects | `UNIQUE(claim_a_id, claim_b_id)` (pair normalized min,max); `kind` ∈ value_conflict\|temporal\|source_disagreement |
 
 ## Relationships
 
-[Describe foreign key relationships, link tables, and cross-references between tables.]
+- `chunks.document_id → documents.id` (cascade)
+- `entity_aliases.entity_id → entities.id` (cascade); `…source_chunk_id → chunks.id`
+- `claims.subject_entity_id / object_entity_id → entities.id`;
+  `…source_chunk_id → chunks.id`; `…document_id → documents.id`;
+  `…superseded_by → claims.id` (self-reference)
+- `links.from_entity_id / to_entity_id → entities.id`
+- `contradictions.claim_a_id / claim_b_id → claims.id`
 
-<!-- Example:
-- `initiative_tasks.initiative_id` -> `initiatives.id` (many-to-one)
-- `initiative_tasks.task_id` -> `tasks.id` (many-to-one)
-- `knowledge_links` is a join table connecting `knowledge_items` to `knowledge_units`
--->
+## Invariants
+
+- **Idempotent writes** on every natural key — re-ingest / re-seed is a no-op.
+- **Never collapse conflicts** — two disagreeing claims both persist; a
+  `contradictions` row pairs them.
+- **Temporal** — seeded roster rows stamped `as_of = 2026-04-15` (org-chart export);
+  supersession via `Repository.supersede_claim`, never delete.
 
 ## Migrations
 
-[How schema changes are applied. Include the process for adding fields, creating tables, and handling backward compatibility.]
+1. Edit `helixpay/db/schema.sql` (all statements idempotent, `IF NOT EXISTS`).
+2. `python -m helixpay.db.migrate` (applies statement-by-statement; needs `DATABASE_URL`).
+3. Update the frozen model in `helixpay/contracts/models.py` if a shape changed.
+4. Update this file + add/extend tests. No destructive migrations.
 
-<!-- Example:
-1. Add field via database UI or REST API (`POST /api/database/fields/table/{table_id}/`)
-2. Update DATA_SCHEMA.md with the new field
-3. Update domain model (dataclass/enum) in `src/lib/`
-4. Update service layer to read/write the new field
-5. Add tests covering the new field
-6. No destructive migrations — fields are added, never removed from production
--->
+> Gotcha: a uniqueness key containing an expression (e.g. `COALESCE(...)`) must be a
+> `CREATE UNIQUE INDEX`, not a table-level `UNIQUE(...)` constraint.

@@ -1,79 +1,52 @@
 ---
 status: living
-last-reconciled: 1970-01-01
+last-reconciled: 2026-06-09
 authoritative-for: [user-stories, acceptance-criteria]
 ---
-<!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
 
 # User Stories
 
-## [Epic Name]
+Derived from `HELIXPAY_BUILD_SPEC.md` §1 (acceptance criteria). The consumer is an
+**AI agent** (exec-briefing bots, sales-prep agents, support copilots) plus the
+grader. Each story notes the gate's contribution and the owning agent for the rest.
 
-### US-XXX: [Story Title]
+## US-1 — Grounded answers with provenance
+> As an agent, I can ask a deep question and get an answer where every claim cites
+> its `source_uri` and `as_of`, so I can trust and attribute it.
 
-- **As a** [role/persona],
-- **I want** [action or capability],
-- **So that** [benefit or outcome].
+- Acceptance: `ask()` returns an `AnswerBundle` with zero uncited claims.
+- Gate: `Citation`/`AnswerBundle` contracts; `Repository.get_sources`. Full: Agent 3.
 
-**Acceptance Criteria**:
+## US-2 — Conflicts surfaced, never silently resolved
+> As an agent, when sources disagree (e.g. Q1 revenue: dashboard vs board deck), the
+> answer surfaces the contradiction and attributes each side.
 
-- [ ] [Criterion 1 — specific, testable]
-- [ ] [Criterion 2]
-- [ ] [Criterion 3]
+- Acceptance: contradictions returned as first-class objects, both sides cited.
+- Gate: `contradictions` table + `add_contradiction` + query fixture conflict. Full: Agents 2/3.
 
-**Status**: [Planned / In Progress / Complete]
-**Sprint**: [SP_XXX]
+## US-3 — Hierarchy resolution
+> As an agent, I can ask who reports to whom as of the latest org chart and get the
+> correct chain, including dotted-line relationships.
 
-<!-- Example:
-## Task Management
+- Acceptance: org hierarchy resolved via recursive query with `as_of` filtering.
+- Gate: seeded roster + `reports_to`/`dotted_line_to` links + `get_org_subtree`. Full: Agent 3.
 
-### US-001: Create a Task
+## US-4 — Staleness handling
+> As an agent, I prefer fresh facts over stale ones and am told when a fact is stale.
 
-- **As a** project manager,
-- **I want** to create a new task with a title, priority, and optional due date,
-- **So that** I can track work items and ensure nothing falls through the cracks.
+- Acceptance: freshest-wins resolution; `as_of_coverage` populated.
+- Gate: temporal columns; seeded rows stamped `as_of=2026-04-15`. Full: Agent 3.
 
-**Acceptance Criteria**:
+## US-5 — Alias / entity resolution
+> As an agent, messy mentions (HPB, Helix Brasil; the two Marias) resolve to the right
+> canonical entity.
 
-- [ ] Task is created in the database with all provided fields
-- [ ] Task defaults to `open` status if not specified
-- [ ] Task is scoped to the requesting user's chat ID
-- [ ] Confirmation message is returned with the task ID
+- Acceptance: roster-first resolution; ambiguous bare names don't silently mis-resolve.
+- Gate: seeded roster + aliases + `resolve_entity(name, type, context)`. Full: Agent 2.
 
-**Status**: Complete
-**Sprint**: SP_001
+## US-6 — One-command run, live in production
+> As the grader, `make up && make ingest && make demo` works from a fresh clone with
+> only env vars, and the system is reachable at a live URL.
 
-### US-002: Receive Stale Task Alerts
-
-- **As a** project manager,
-- **I want** to be notified when tasks have been idle for too long,
-- **So that** I can decide whether to reactivate, extend, or cancel them.
-
-**Acceptance Criteria**:
-
-- [ ] Tasks with no activity for 14+ days are flagged as stale
-- [ ] Stale tasks appear in the daily briefing with exit path options
-- [ ] Tasks marked as `stale_immune` are excluded from detection
-- [ ] Reactivating a stale task restores its previous status
-
-**Status**: Complete
-**Sprint**: SP_104
-
-## Strategic Intelligence
-
-### US-010: Daily Strategic Briefing
-
-- **As a** founder,
-- **I want** to receive a daily briefing with strategic recommendations and hypothesis status,
-- **So that** I can make informed decisions without manually reviewing all data.
-
-**Acceptance Criteria**:
-
-- [ ] Briefing includes initiative pulse, recommendations, and drift warnings
-- [ ] Briefing surfaces active hypotheses nearing review date
-- [ ] Briefing includes relevant knowledge snippets scored by relevance
-- [ ] Stale focus frames show a warning instead of blocking the briefing
-
-**Status**: In Progress
-**Sprint**: SP_124
--->
+- Acceptance: idempotent ingestion; MCP over streamable-HTTP at the domain.
+- Gate: idempotent schema + seed; config from env. Full: Agents 4/5.

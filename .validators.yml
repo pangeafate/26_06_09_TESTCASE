@@ -9,6 +9,13 @@
 #   - coverage: consumed by validators/validate_tdd.py
 # Unknown keys are ignored by consumers.
 
+# Files scanned by validate_workspace.py for size limits and credential leaks.
+# Defaults are the AGENT_INSTRUCTIONS/AGENT_IDENTITY stubs (pruned for HelixPay —
+# governance lives in CLAUDE.md + AGENTS.md); point the scan at those instead.
+bootstrap_files:
+  - CLAUDE.md
+  - AGENTS.md
+
 # Coverage gate for validate_tdd.py. Artifact-based: produce a Cobertura report
 # with `pytest --cov=src --cov-report=xml`, then validate_tdd.py parses it and
 # fails when line/branch coverage is below threshold. A missing report is
@@ -67,6 +74,8 @@ doc_reality:
     - node_modules
     - dist
     - build
+    - data          # the HelixPay dataset — input content, not authored project docs
+    - DEV_RULES      # vendored governance bundle (gitignored); operative copies live at root
   dead_path_exclusions:
     - test/unit/
     - test/integration/
@@ -74,12 +83,36 @@ doc_reality:
     - __pycache__/
     - tasks/
     - .venv/
+    # Planned deliverables of the post-gate build agents (HELIXPAY_BUILD_SPEC §5/§6);
+    # referenced by the spec / CLAUDE.md / docs before they exist. Bare-dir tokens
+    # are exact-matched here; their sub-paths are globbed below.
+    - prompts/
+    - eval/
+    - tests/golden/
+    - ingest/
+    - query/
+    - mcp/
+    - api/
+    - deploy/
+    - helixpay/cli.py
+    - db/schema.sql        # spec shorthand for helixpay/db/schema.sql
+    - smoke-test/          # bootstrap sample task (TASK_000); not part of HelixPay
   dead_path_glob_exclusions:
     - "src/*"
     - "test/unit/*"
     - "test/integration/*"
     - "test/fixtures/*"
     - ".github/workflows/*"
+    # sub-paths under the planned build-agent dirs (matcher is fnmatch; '*' spans '/')
+    - "prompts/*"
+    - "eval/*"
+    - "tests/golden/*"
+    - "ingest/*"
+    - "query/*"
+    - "mcp/*"
+    - "api/*"
+    - "deploy/*"
+    - "smoke-test/*"
   frontmatter_required:
     - PROGRESS.md
   duplication_threshold: 30

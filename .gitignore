@@ -7,7 +7,16 @@ __pycache__/
 *.pyc
 .pre_impl_passed
 
+# Python environments / build + tooling caches
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
 # DEV_RULES source bundle: operative copies (validators/, practices/, scripts/,
 # templates) are checked out at project root by the bootstrap. The bundle keeps
 # its own nested .git, so ignore it here to avoid an embedded repo.
 DEV_RULES/
+.docs_reconciled

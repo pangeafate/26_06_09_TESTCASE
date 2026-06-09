@@ -1,0 +1,36 @@
+[project]
+name = "helixpay"
+version = "0.1.0"
+description = "HelixPay Ontology — temporal, provenance-carrying ontology over a messy company-data dump, queryable by an AI agent with citations."
+requires-python = ">=3.12"
+dependencies = [
+    "psycopg[binary,pool]>=3.2",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["helixpay"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "db: integration test requiring a live Postgres (DATABASE_URL must be set)",
+    "smoke: exercises the real data/ files (excluded from the fast unit suite)",
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+# The freeze gate type-checks PostgresRepository against the Repository Protocol.
+files = ["helixpay"]

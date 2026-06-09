@@ -250,24 +250,68 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
 
 ## HelixPay Project Conventions (authored at the gate — SPEC §7)
 
-> PLACEHOLDER. The orchestrator's Phase 0 gate fills this section in before
-> fanning out to the build agents, per `HELIXPAY_BUILD_SPEC.md` §7. Do not start
-> the parallel build until it is written. Target contents:
->
-> - **Stack & commands:** Python 3.12, uv; Postgres + pgvector; FastAPI; MCP
->   Python SDK (streamable-HTTP). `make up | ingest | demo | test | fmt`.
-> - **Conventions:** cross-module types live in `helixpay/contracts/` and are
->   never redefined locally; all DB access goes through `Repository` (no raw SQL
->   outside `db/`); secrets only from env; models — extraction =
->   `claude-sonnet-4-6`, synthesis/`ask` = `claude-opus-4-8`, embeddings = voyage
->   (1024d); every LLM call uses a named prompt in `prompts/` + a structured-output
->   schema with validate-and-repair.
-> - **Ontology rules:** never collapse conflicting facts — store every value as a
->   Claim (source + as_of + confidence); contradictions are first-class rows,
->   surfaced never silently resolved; never delete superseded facts (set
->   `valid_to` / `superseded_by`); entity resolution matches the seeded roster
->   first; predicates canonicalize via `metric_vocab`; `ask()` output has zero
->   uncited claims.
-> - **Gotchas:** pgvector needs `CREATE EXTENSION vector;` before migrations; MCP
->   must run streamable-HTTP not stdio; HTML dashboards — capture the number AND
->   its as-of date; ingestion is idempotent on `content_hash`.
+> Authored by the Phase 0 gate (SP_001) after freezing the substrate. These bind
+> every build agent. On overlap with the governance rules above, the stricter rule
+> wins.
+
+### Stack & commands
+- Python 3.12+ (3.13 in the local toolchain), `uv` for envs/installs. Postgres +
+  `pgvector` (image `pgvector/pgvector:pg16`). FastAPI. MCP Python SDK over
+  **streamable-HTTP** (never stdio — stdio is local-only and breaks the live URL).
+- `make up | ingest | demo | test | fmt` (Makefile is Agent 5's deliverable). Until
+  it lands: `uv run python -m helixpay.db.migrate` applies the schema and
+  `uv run python -m helixpay.seed.run_seed` loads the deterministic backbone.
+- Tests live under `test/unit/**` and `test/integration/**`. DB tests are marked
+  `db` and auto-skip unless `DATABASE_URL` is set. Run `uv run pytest test` and
+  `uv run mypy helixpay` before any PR.
+
+### Conventions
+- **Cross-module types live in `helixpay/contracts/` and are never redefined
+  locally.** Import them: `from helixpay.contracts import Claim, Repository, …`.
+  The four Protocols (`SourceConnector`, `Repository`, `QueryEngine`) + models are
+  **frozen** — propose a contract change, don't fork the type.
+- **All DB access goes through `Repository`. No raw SQL outside `helixpay/db/`.**
+  The one implementation is `helixpay.db.repository.PostgresRepository`.
+- **Secrets only from env:** `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `DATABASE_URL`
+  (via `helixpay.config`). Never hardcode; never log a secret or a connection string.
+- **Models:** extraction = `claude-sonnet-4-6`; synthesis/`ask` = `claude-opus-4-8`;
+  embeddings = voyage, **1024-dim** (pinned in `helixpay.config`).
+- Every LLM call uses a **named prompt in `prompts/`** + a **structured-output
+  schema validated against the contracts**, with validate-and-repair-or-drop. No
+  free-form trust.
+- **Embedding/tsv ownership:** the ingest pipeline computes Voyage embeddings and
+  passes them to `Repository.add_chunks(chunks, embeddings)`; the lexical `tsv` is a
+  DB-**generated** column — never compute or insert it from Python.
+
+### Ontology rules (the point of the project)
+- **Never collapse conflicting facts.** Every value is a `Claim` (source + `as_of`
+  + confidence). Conflicting claims coexist.
+- **Contradictions are first-class rows**, surfaced in answers, never silently
+  resolved. `AnswerBundle.contradictions` is present-and-empty, never hidden.
+- **Never delete superseded facts** — set `valid_to` / `superseded_by` via
+  `Repository.supersede_claim(...)`.
+- **Entity resolution matches the seeded roster first.** `resolve_entity(name,
+  entity_type=None, context=None)`; an ambiguous bare name with no resolving
+  `context` returns `None` (never a silent pick — that's how the two Marias / two
+  Tans stay distinct). Org reporting is `reports_to`; functional dotted-lines are a
+  distinct `dotted_line_to` link.
+- **Predicates canonicalize via `metric_vocab`** (`canonical_predicate` returns the
+  input unchanged when unknown; never raises). `"annual recurring revenue"` and
+  `"ARR"` must land on the same key or contradiction detection silently no-ops.
+- **`ask()` output has zero uncited claims.**
+
+### Gotchas (append every time Claude trips)
+- pgvector needs `CREATE EXTENSION vector;` before the schema (the migration does it
+  first).
+- A uniqueness key containing an expression (e.g. `COALESCE(as_of, …)`) must be a
+  `CREATE UNIQUE INDEX`, **not** a table-level `UNIQUE (...)` constraint — the latter
+  is a syntax error in Postgres. (Cost us a freeze re-run on `links`.)
+- `migrate.py` applies the schema **statement-by-statement** (psycopg executes one
+  command per `execute()`); keep `schema.sql` free of dollar-quoted bodies so the
+  comment-strip + `;` split stays correct.
+- MCP must run streamable-HTTP, not stdio, or it only works locally.
+- HTML dashboards: capture the number **and** its as-of date — that's where
+  contradictions hide (the planted Q1 revenue/ARR conflict).
+- Ingestion is idempotent on `content_hash`; re-running on unchanged data is a
+  no-op. Seeding and `add_claim` are idempotent on their natural keys, so re-seeding
+  is safe.

@@ -1,0 +1,1 @@
+2026-06-09T17:43:07Z	f54c2533ab3896550244c1a8f50bfccd4489588b	main	approved_by=sergeypodolskiy (user, approved commit+push)	reason=Stage-0 framework-adoption baseline: no product code or tests exist yet, so python-tests collects 0 (exit 5). Tests arrive with the first build sprint.

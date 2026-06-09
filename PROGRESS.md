@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 1970-01-01
+last-reconciled: 2026-06-09
 authoritative-for: [active-sprint, sprint-history]
 ---
 <!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
@@ -11,17 +11,19 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_XXX
-**Started:** YYYY-MM-DD
-**Stage:** Planning / Review / Implementation / Gap Analysis / Deployment / Documentation
-
-<!-- Example:
-**Current:** SP_131
-**Started:** 2026-03-31
-**Stage:** Implementation
--->
+**Current:** SP_001
+**Started:** 2026-06-09
+**Stage:** Documentation
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
+
+SP_001 — Phase 0 Gate: freeze the shared substrate (scaffold, db/schema.sql,
+contracts/**, Postgres Repository, config.py, CLAUDE.md §7, .claude/**, the
+deterministic seed roster + metric_vocab, and the query fixture) for the
+HelixPay Ontology build (HELIXPAY_BUILD_SPEC.md §5). Plan:
+`workspace/sprints/SP_001_phase0_gate.md`. Freeze proven: contracts import,
+schema applies on pgvector pg16, seed loads (12 metrics / 63 entities / 99
+links), mypy clean, 38 tests green. Stage 3 + Stage 5 reviews complete.
 
 ## Sprint History
 
