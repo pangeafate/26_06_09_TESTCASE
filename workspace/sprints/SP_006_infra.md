@@ -151,10 +151,7 @@ is **Foundational** — high blast radius (deploy), so the full lifecycle applie
 
 ### Pre-Implementation Review
 
-- **Iteration 1** — *Reviewer: architect-review (plan-level, independent pass).*
-  Files reviewed: `docker-compose.yml` (planned), `Makefile` (planned), `.env.example`
-  (planned), `HELIXPAY_BUILD_SPEC.md` §9.
-  Severity: **HIGH** — 1 HIGH, 2 MEDIUM, 0 CRITICAL.
+- **Iteration 1** — *Reviewer: architect-review (plan-level, independent pass).* Severity: **HIGH** (1 HIGH, 2 MEDIUM, 0 CRITICAL). Files reviewed: `docker-compose.yml` (planned), `Makefile` (planned), `.env.example` (planned), `HELIXPAY_BUILD_SPEC.md` §9.
   - HIGH: **Compose `DATABASE_URL` host collision.** `helixpay.config` reads
     `DATABASE_URL` from env; a developer's `.env` from local dev points at
     `127.0.0.1:55432`, which is unreachable from inside the `app` container (must be
@@ -171,10 +168,7 @@ is **Foundational** — high blast radius (deploy), so the full lifecycle applie
     and I can't add one to pyproject. *Resolution:* `uvx ruff format` runs ruff ephemerally
     without mutating the dependency set. Accepted.
 
-- **Iteration 2** — *Reviewer: code-review (plan-blind on the build-spec invariants).*
-  Files reviewed: `docker-compose.yml` (planned), `Dockerfile` (planned), `deploy/**`
-  (planned), `deploy/tests/test_infra_contract.py` (planned).
-  Severity: **MEDIUM** — 0 CRITICAL, 0 HIGH, 2 MEDIUM. No blocking findings remain.
+- **Iteration 2** — *Reviewer: code-review (plan-blind on the build-spec invariants).* Severity: **MEDIUM** (0 CRITICAL, 0 HIGH, 2 MEDIUM — no blocking findings remain). Files reviewed: `docker-compose.yml` (planned), `Dockerfile` (planned), `deploy/**` (planned), `deploy/tests/test_infra_contract.py` (planned).
   - MEDIUM: **db port exposure regression risk.** The single highest-value safety invariant
     (db never reachable publicly) must be machine-checked, not just eyeballed. *Resolution:*
     the contract test asserts the rendered `db` service publishes no host port; this is the
