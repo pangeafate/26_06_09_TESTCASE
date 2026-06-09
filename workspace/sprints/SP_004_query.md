@@ -258,4 +258,20 @@ here.
 
 ### Post-Implementation Review
 
-_(filled at Stage 5 — plan-blind, Foundational floor = 2 iterations)_
+- **Iteration 1** (2026-06-09): code-reviewer (independent sub-agent, **plan-blind** — saw only code + tests + frozen contracts) found 2 CRITICAL, 4 HIGH, 5 MEDIUM, 4 LOW. Files reviewed: helixpay/query/{retrieval,temporal,planner,contradictions,synthesis,graph,clients,engine}.py, helixpay/query/prompts/ask_synthesis.md, test/unit/query/*.py, test/integration/query/test_query_integration.py. Verdict: APPROVE-WITH-CHANGES.
+- **Iteration 2** (2026-06-09): security-auditor (independent sub-agent, **plan-blind**) found 0 CRITICAL, 1 HIGH, 2 MEDIUM, 2 LOW. Files reviewed: helixpay/query/{clients,synthesis,engine,retrieval,graph,contradictions,temporal,planner}.py. Verdict: APPROVE-WITH-CHANGES. Confirmed: no secret/connection-string leak (the `ask.trace` log carries integer ids only), no `eval`/`exec`/raw SQL, `importlib.import_module` takes constant module names (no injection), and the citation guard cannot be made to fabricate a citation by adversarial markers.
+
+**Resolution — all CRITICAL and HIGH addressed (tests added; suite 87 green, mypy clean):**
+1. **code-C1 (both contradiction sides must be citeable even cross-subject)**: `engine._gather_claim_facts` now fetches the conflicting contradiction's subject's claims when a side is missing from the resolved set, so both sides reach grounding and are citeable. Test: `test_ask_surfaces_contradiction_even_when_subject_entity_unresolved`.
+2. **code-C2 (`relevant()` topic path was dead → metric conflict missed when the entity doesn't resolve)**: `contradictions.relevant` now takes `topics` and predicate-matches on the canonicalized term; `engine.ask` passes the question's candidate terms. A metric question surfaces the conflict even with zero resolved subjects. Tests: `test_relevant_by_topic_when_entity_unresolved`, engine test above.
+3. **code-H1 (staleness off-by-one)**: `as_of_coverage` flags `stale` only when the freshest evidence is **strictly older** than the roster date; evidence on the roster date is current. Test: `test_as_of_coverage_on_roster_date_is_not_stale`.
+4. **code-H2 (double-`replace` prompt corruption / injection)**: `render_prompt` now substitutes both placeholders in a single regex pass; injected braces are never re-expanded. Test: `test_render_prompt_single_pass_no_reexpansion`.
+5. **sec-H1 (SDK exception could surface a prompt-bearing traceback)**: `engine.ask` wraps `synthesize` and degrades to the safe-empty output on any client error, logging a route-only warning (never the prompt/secret).
+6. **sec-M1 (malformed/adversarial structured output crashed `ask`)**: `enforce_citations` is now type-defensive (non-list `sentences`, non-dict items, wrong-typed `text`/`cites`/markers, bad `confidence`) — never crashes, never fabricates a citation. `clients.synthesize` guards `json.loads`/non-dict tool input → safe empty. Test: `test_enforce_is_robust_to_malformed_output`.
+
+**Deferred (MEDIUM/LOW, non-blocking, tracked):**
+- code-H3 / sec perf: `resolve_entity`/`canonical_predicate` are one-call-per-term hot loops; capped at `_MAX_TERMS=40`/`_MAX_SUBJECTS=6` and documented. Real fix is a batched `resolve_entities`/`get_links(from_entity_id=…)` Protocol read (delivery-report friction list).
+- code-H4 prompt location: governance-recorded deviation (see delivery report); query prompt under `helixpay/query/prompts/` to avoid Agent 2's `prompts/` ownership.
+- code-M1 dedup via set (done in `enforce_citations`); code-M4 source-date dedup compares `date` objects (done); code-M5 dead-param (removed via `topics`).
+- sec-LOW prompt-injection of chunk text is neutralised by the claim-backed citation guard (worst case is text/claim mispairing, never a fabricated source or RCE); explicit fenced-grounding hardening noted as optional.
+- code-M2 `_enrich_roles` in-place mutation is safe (PostgresRepository returns a fresh subtree per call); code-M3/L3/L4 fake/test-fidelity polish noted.
