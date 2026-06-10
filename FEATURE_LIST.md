@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-10
+last-reconciled: 2026-06-11
 authoritative-for: [features]
 ---
 
@@ -44,3 +44,13 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned (owning agent in pare
 | Project entities (`Project Confluence`, `CRM migration`) + `ga_target`/`completion_target` vocab (`recall-metric-vocab`) | 🚧 | `helixpay/seed/roster.py`, `metric_vocab.py` (SP_010) |
 | Shared value normalization wired into contradiction detection (`recall-normalize`) | 🚧 | `helixpay/ingest/contradict.py` → `normalize.py` (SP_010) |
 | Target-predicate temporal-slip contradiction — Confluence GA (`recall-target-contradiction`) | 🚧 | `helixpay/ingest/contradict.py` (SP_010) |
+
+## Round 3 — provenance surface + answer UX (query side)
+
+| Feature | Status | Source |
+|---------|--------|--------|
+| Close the chunk-citation hole: `[S#]`-grounded sentences cite real chunk `Citation`s via `get_chunk_sources` (`chunk-citation-close`) | ✅ | `helixpay/query/synthesis.py`, `engine.py` (SP_012) |
+| Link citations: relationship answers cite `[L#]` links via `get_link_sources` (`surface-link-citation`) | ✅ | `helixpay/query/synthesis.py`, `engine.py` (SP_012) |
+| Consensus/dissent rollup: collapse N coexisting claims to one ranked consensus + explicit dissent (`consensus-dissent`) | ✅ | `helixpay/query/consensus.py` (SP_012) |
+| Type contradictions (`value`/`temporal`/`source disagreement`/`relationship`) into the synthesis prompt, incl. link conflicts (`contradiction-typing`) | ✅ | `helixpay/query/contradictions.py`, `synthesis.py` (SP_012) |
+| Verbatim-span citations: `Citation.snippet` quotes `Claim.evidence` (`verbatim-citations`) | ✅ | `helixpay/query/synthesis.py` (SP_012) |

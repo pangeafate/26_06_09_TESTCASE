@@ -4,8 +4,8 @@ tier: Standard
 features: [chunk-citation-close, consensus-dissent, contradiction-typing, verbatim-citations]
 user_stories: []
 schema_touched: false
-structure_touched: true
-status: In Progress
+structure_touched: false
+status: Complete
 isolation: branch-only
 branch: sprint/SP_012-provenance-surface
 worktree: ""
@@ -156,10 +156,35 @@ Pinned at Stage-3 review (decisions below are binding on the implementation):
 
 ### Post-Implementation Review
 
-- Iteration 1 — (pending; plan-blind over the query diff)
-- Iteration 2 — (pending; live `ask` runtime evidence)
+> Standard tier — floor = 2. Both reviewers plan-blind (given only the changed code +
+> tests, never this plan). Tests green (351 passed, 36 skipped) and `mypy` clean after
+> the fixes below.
+
+- **Iteration 1** — code-reviewer, plan-blind, correctness/edge-cases. Files reviewed: helixpay/query/{synthesis,consensus,contradictions,engine}.py, helixpay/query/prompts/ask_synthesis.md, test/unit/query/{fakes,test_synthesis,test_consensus,test_contradictions,test_engine}.py. HIGH: (H1) the `_MAX_CLAIM_FACTS` cap could drop a contradiction side, making the conflict unattributable in grounding — a silent half-resolution; (H2) `render_contradictions` could emit an unattributed conflict line when neither side has a marker. MEDIUM/LOW: (M3) `label_for` should pass an unknown stored `kind` through rather than re-derive; (M4) tests should assert `[C#]` markers appear in the consensus/contradiction prompt blocks; (L1) consensus representative could be a null value. Verified clean: `model_copy` snippet override (pydantic v2), import layering (no cycle), tie-break determinism, `_valid_markers` malformed-output guards. **Resolution:** H1 fixed (contradiction sides retained in full; cap bounds only the remainder + a regression test on `_gather_claim_facts`); H2 fixed (skip unattributable lines — the conflict still rides on `AnswerBundle.contradictions`); M3/L1 fixed; M4 assertions added.
+- **Iteration 2** — security-auditor, plan-blind, LLM trust-boundary (OWASP LLM01/LLM05). Files reviewed: helixpay/query/{synthesis,consensus,contradictions,engine}.py, helixpay/query/prompts/ask_synthesis.md. Verdict: the four guarantees hold — no path fabricates a citation, malformed/adversarial model output never crashes `enforce_citations`, the degraded `synthesize` path logs only the route enum (no prompt/secret leak), single-pass `render_prompt` keeps attacker-controlled grounding from smuggling a placeholder, and resource use is capped (O(N²) bucketing bounded by the 50-claim cap). MEDIUM: model-controlled `confidence` was parsed but not clamped — `NaN`/`inf`/out-of-range propagated to `AnswerBundle.confidence` (improper output handling). LOW (advisory, not taken): defensive `isinstance` on evidence, note-length truncation. **Resolution:** MEDIUM fixed — `confidence` now rejects non-finite and clamps to `[0,1]`, `SYNTH_SCHEMA` gains `minimum/maximum`, covered by adversarial tests (`inf`, `99.0`, `"high"`).
+
+## Close-out
+
+- **Verification (Stage 13):** `uv run pytest test` → 351 passed, 36 skipped; `uv run
+  mypy helixpay` → clean; `uv run python scripts/dev-gateway.py . --stage ci` → all checks
+  PASS (run under `uv` so the gateway's `sys.executable` is the project venv — system
+  python lacks `psycopg`/`mcp`). All five features land on the **$0 unit/fakes tier**; the
+  fakes implement the exact SP_009 `get_chunk_sources`/`get_link_sources`/`get_links(from_entity_id)`
+  surface.
+- **Live `ask` smoke — PENDING operator smoke** (no `DATABASE_URL`/API keys in this
+  environment; the smoke needs an ingested DB + one Opus call). Exact steps once a seeded
+  DB is available: `helixpay ask "what is the runway?"` → expect one consensus value with
+  corroborating count + a verbatim citation; `helixpay ask "when does Confluence GA?"` →
+  expect a typed temporal contradiction with both sides cited. No `fix_type`, so Rule 21
+  behavioral-closure does not gate completion; the answer-shape logic is fully covered by
+  unit tests.
+- **Doc note:** `FEATURE_LIST.md` `last-reconciled` advanced to `2026-06-11` — a same-day
+  reconciliation artifact (SP_010 already consumed `2026-06-10` at this branch's base, and
+  F-4 enforces a strictly-increasing marker). The validator's corrective-reset path can
+  realign it on the next sprint.
 
 ## Hand-off (to SP_013)
 
 - New answer shape (typed contradictions, consensus/dissent, verbatim citations) is the
-  target the eval upgrades assert against.
+  target the eval upgrades assert against. The pure `consensus.rollup` and
+  `contradictions.label_for` are reusable by the eval matcher.
