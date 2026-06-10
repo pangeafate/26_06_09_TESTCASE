@@ -355,3 +355,56 @@ for variant in variants:
   layers do not move the golden number at $0.**
 - **The one line for the runbook:** Layers 0+2 make attribution *correct* (proven at $0); the
   recall lift to ≥80% is the gated re-record — do not quote a recall number until it runs.
+
+---
+
+## Increment 2 — re-record prompt surgery + the customer-collapse proof (2026-06-10)
+
+The final-mile cache audit (recorded in `workspace/sprints/SP_010_recall_and_replay.md`
+Increment 2) confirmed three of the four remaining golden misses are baked-cache defects that
+only a re-record fixes. This increment extends the Layer-1 prompt (paid, gated) and adds the
+resolution proof for the $0 Açaí win that SP_010 seeds.
+
+### Prompt surgery (`prompts/extract_claims.md`, GATED — measured only on the paid re-record)
+
+A new **"Initiative milestones & contributor rankings"** section teaches two shapes the old
+cache got wrong:
+- **Initiative milestones** — a GA/launch date or a migration cutover/decommission is a claim
+  about the **named initiative** (`Project Confluence` / `CRM migration`), with the canonical
+  predicate (`ga_target` / `completion_target`) and the date as a **clean human phrase with the
+  year** ("end of Q3 2026", "end of June 2026") — not a bare token or a parenthetical ISO date;
+  `as_of` is the **assertion** date. Negative few-shots show the exact baked-cache wrong forms
+  (`"ga target date (revised)" → "end-Q3 (2026-09-30)"` on `Confluence platform`;
+  `"pipedrive decommission date" → "end of June"` on `HelixPay`) marked ✗-wrong, with the
+  ✓-right re-subjected/canonicalized form. (A migration **start** date is kept distinct.)
+- **Contributor rankings** — when a span **explicitly names** the lead of a repo/component, emit
+  `(repo, top_contributor, <named leader>)`; do **not** infer a winner the document does not name.
+
+Additive and behind the paid gate; the regression suite plus the re-record's own grader run
+catch any extraction regression.
+
+### Resolve proof (`test/unit/ingest/test_resolve.py`)
+
+Two tests prove SP_019's seeded-snap delivers the Açaí collapse SP_010 seeds for:
+`test_seeded_account_collapses_dual_typed_mentions_to_one_row` (customer + other mentions →
+one seeded id, zero mints) and `test_seeded_account_wins_even_if_a_minted_other_row_coexists`
+(bare-name resolve returns the seeded row even with a surviving mint — Stage-3 Finding 2).
+
+### Honest projection (Stage-3 Findings 5/6)
+
+The gated re-record's bar-clearing target is **9/11 (82%)** = the $0 Açaí seed + the CRM
+wrong-subject re-record. `pdf-boarddeck-confluence-q3` (value *and* predicate defect; golden
+"end of Q3 2026" vs source "end-Q3") and `code-core-top-contributor` (requires the extractor to
+assert a named lead) are **stretch**, not counted on.
+
+### Pre-Implementation Review (Increment 2)
+
+- **Iteration 1** — architect-reviewer, plan-blind on the combined final-mile design. 1 HIGH + 3 MEDIUM, all resolved; the prompt changes are additive and gated. Files reviewed: prompts/extract_claims.md, resolve.py, pipeline.py, eval/run.py, eval/smoke/facts.yaml, .replay-cache audit. (Shared reviewer with SP_010 Increment 2 — same design; findings recorded there.)
+- **Iteration 2** — code-reviewer, plan-blind adversarial; 1 CRITICAL (shared with SP_010, fixed in repair.py) + MEDIUM-3 on the prompt. Files reviewed: prompts/extract_claims.md, repair.py, resolve.py, run_seed.py, .replay-cache, test_repair.py.
+  - MEDIUM-3: the contributor-ranking prompt must pin the **direction** (repo = subject, person = object_value) or the LLM may invert it to `(Sara Wijaya, top_contributor, helixpay/core)`, which the grader can't match and `repair.py` won't fix. **Resolved:** the ✓-right example and the prose state subject = the repo/component and object_value = the named leader explicitly.
+  - CRITICAL (shared): `top_contributor` added to `repair._NON_COMPANY_KEYS` so the new vocab key never widens the repair gate (recorded in SP_010 Increment-2 Iteration 2).
+
+### Post-Implementation Review (Increment 2)
+
+- **Iteration 1** — code-reviewer, plan-blind, 0 CRITICAL + 0 HIGH + 2 hardening (MEDIUM/LOW), APPROVE (shared review with SP_010 Increment 2). Files reviewed: prompts/extract_claims.md, repair.py, test_prompts.py, test_resolve.py, test_repair.py. Verified: the prompt test's negative-example guard is sound; the resolve tests faithfully exercise the real resolver; `repair._NON_COMPANY_KEYS` addition holds. Both coverage findings (M-1/L-1) applied.
+- **Iteration 2** — paid re-record verification (operator-gated): re-record the 9 smoke docs with the new prompt, re-grade; record the actual recall in `SP019_attribution_run.md`. Pending operator approval (standing no-paid-extraction rule).

@@ -76,6 +76,44 @@ A KPI is a property **of an entity**; the metric is the predicate, never the sub
 - A region row "Brasil Q1 Revenue — SGD equiv 4.8M" (scoped, so it stays on the region):
   - ✓ right: `{"subject": "HelixPay Brasil", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 4.8M", "as_of": "2026-03-31"}`
 
+## Initiative milestones & contributor rankings
+
+Two more attributions that are easy to mis-shape:
+
+**A project / initiative milestone** (a GA / launch date, a migration cutover or
+legacy-system decommission) is a claim about the **named initiative**, not the company:
+- `subject` = the initiative as named ("Project Confluence", "CRM migration"). If the span
+  uses a surface form ("Confluence platform", "the Pipedrive → HubSpot cutover"), still use
+  the initiative entity.
+- `predicate` = the **canonical milestone name**: `ga_target` for a go-live / general-
+  availability / launch date; `completion_target` for a migration completion / cutover /
+  legacy-system decommission. (A migration **start** date is NOT a completion — keep it a
+  separate, plainly-named predicate.)
+- `object_value` = the milestone date as a **clean human phrase including the year**
+  ("end of Q3 2026", "end of June 2026") — not a bare token ("end-Q3") and not a parenthetical
+  ISO date ("(2026-09-30)").
+- `as_of` = the date the milestone is **asserted** (the document/board date), since a target
+  is a forward-looking assertion, not a realized period.
+
+Examples:
+- Board deck "Confluence platform — Original plan: end-Q2 GA. Reality: end-Q3." (12 May 2026):
+  - ✗ wrong: `{"subject": "Confluence platform", "subject_type": "product", "predicate": "ga target date (revised)", "object_value": "end-Q3 (2026-09-30)"}`
+  - ✓ right: `{"subject": "Project Confluence", "subject_type": "other", "predicate": "ga_target", "object_value": "end of Q3 2026", "as_of": "2026-05-12"}`
+- Slack "pipedrive decommission — end of june for everyone" (15 Apr 2026):
+  - ✗ wrong: `{"subject": "HelixPay", "subject_type": "other", "predicate": "pipedrive decommission date", "object_value": "end of June"}`
+  - ✓ right: `{"subject": "CRM migration", "subject_type": "other", "predicate": "completion_target", "object_value": "end of June 2026", "as_of": "2026-04-15"}`
+
+**A contributor / ownership ranking** (a doc that names who *leads* a repo, component, or
+account by an explicit measure) yields a claim whose `subject` is the thing being led and
+whose value is the **named leader**:
+- predicate `top_contributor`; `subject` = the repo/component (e.g. "helixpay/core");
+  `object_value` = the person named as the leader. **Direction matters: the repo is the
+  subject and the person is the value — never the reverse.**
+- Only emit it when the span **explicitly states the lead** ("Sara Wijaya led Q1 with 89
+  commits"); do not infer a winner the document does not name.
+  - ✓ right: `{"subject": "helixpay/core", "subject_type": "other", "predicate": "top_contributor", "object_value": "Sara Wijaya", "as_of": "2026-03-31"}`
+  - ✗ wrong (inverted): `{"subject": "Sara Wijaya", "subject_type": "person", "predicate": "top_contributor", "object_value": "helixpay/core"}`
+
 ## Output — STRICT JSON ONLY
 
 Return a single JSON object and nothing else (a lone ```json fence is tolerated but not

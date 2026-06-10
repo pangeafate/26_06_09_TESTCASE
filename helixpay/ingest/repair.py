@@ -29,11 +29,18 @@ from helixpay.contracts import EntityType
 from helixpay.ingest.extract.schemas import ClaimOut
 from helixpay.seed.metric_vocab import METRIC_VOCAB, canonical_key
 
-# Milestone/deadline predicates whose DOMAIN is a project or product (e.g. Project Confluence's
-# GA date), NOT the company. They are excluded from the repair gate so a milestone the LLM
-# mis-typed ``metric`` (whose aliases are common words like "launch"/"cutover"/"completion") is
-# never re-attributed to the company — that belongs to entity resolution, not this transform.
-_NON_COMPANY_KEYS: frozenset[str] = frozenset({"ga_target", "completion_target"})
+# Predicates whose DOMAIN is a project/product/repo, NOT the company. They are excluded from
+# the repair gate so a non-company attribute the LLM mis-typed ``metric`` (whose aliases are
+# common words like "launch"/"cutover"/"completion"/"top contributor") is never re-attributed
+# to the company — that belongs to entity resolution, not this transform.
+#   * ga_target / completion_target  — a project/initiative milestone (Project Confluence GA)
+#   * top_contributor                — a repo/component attribute (helixpay/core's Q1 lead)
+# Keep this in lock-step with METRIC_VOCAB: any new key whose subject is not the company MUST
+# be listed here, or KNOWN_KEYS widens silently and repair_metric_subject mis-fires (SP_010
+# Increment-2 Stage-3 CRITICAL).
+_NON_COMPANY_KEYS: frozenset[str] = frozenset(
+    {"ga_target", "completion_target", "top_contributor"}
+)
 
 # Canonical COMPANY metric keys (e.g. ``revenue``, ``nps``, ``arr``, ``headcount``). The
 # in-memory ``METRIC_VOCAB`` is the source of truth that ``run_seed`` loads into the

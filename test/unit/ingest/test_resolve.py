@@ -188,3 +188,38 @@ def test_genuinely_new_open_class_mention_still_mints():
     cid = resolve_mention(repo, "Brand New Co", entity_type="customer")
     assert cid is not None and len(repo.entities) == before + 1
     assert repo.entities[-1].seeded is False
+
+
+def test_seeded_account_collapses_dual_typed_mentions_to_one_row():
+    # SP_010 final-mile / SP_019 snap: a named account is mentioned with TWO subject_types
+    # (`customer` AND `other`). Once it is seeded as a `customer`, every typing resolves to
+    # the ONE seeded row and nothing is minted — so the owns-link endpoint is unambiguous and
+    # the grader's bare-name resolve lands on it. Without the seed, the `other` mention would
+    # mint a second row and the bare name would be ambiguous (link dropped).
+    repo = FakeRepo()
+    acai = repo.seed("Açaí Express SP", "customer", aliases=["Acai Express SP"])
+    before = len(repo.entities)
+    assert resolve_mention(repo, "Açaí Express SP", entity_type="customer") == acai
+    # the `other`-typed mention misses the type filter but snaps to the seeded customer:
+    assert resolve_mention(repo, "Açaí Express SP", entity_type="other") == acai
+    # the grader's bare-name (type-agnostic) resolve also lands on the one seeded row:
+    assert resolve_mention(repo, "Açaí Express SP") == acai
+    # a folded (accent-stripped) mention also reaches the accented canonical via the alias:
+    assert resolve_mention(repo, "Acai Express SP", entity_type="customer") == acai
+    assert len(repo.entities) == before  # zero duplicates minted
+
+
+def test_seeded_account_wins_even_if_a_minted_other_row_coexists():
+    # Defense-in-depth (Stage-3 finding): even if a stray `other|Açaí Express SP` row had
+    # already been minted (e.g. processed before the seed snap on a long-lived DB), the
+    # bare-name resolve the grader and the link endpoint use must still land on the SEEDED
+    # row via seeded-first disambiguation — never return None for ambiguity. This mirrors
+    # PostgresRepository.resolve_entity restricting to seeded candidates when any exist.
+    repo = FakeRepo()
+    acai = repo.seed("Açaí Express SP", "customer")
+    repo.upsert_entity(  # a surviving unseeded duplicate under a different open-class type
+        Entity(canonical_name="Açaí Express SP", entity_type="other", seeded=False)
+    )
+    # the grader and the link endpoint resolve the bare name TYPE-AGNOSTICALLY; even with the
+    # duplicate present, seeded-first disambiguation returns the seeded row — never None.
+    assert resolve_mention(repo, "Açaí Express SP") == acai

@@ -43,6 +43,12 @@ def test_known_metric_excludes_milestone_predicates_with_common_word_aliases():
     assert is_known_metric("cutover") is False
     assert is_known_metric("completion") is False
     assert is_known_metric("go live") is False
+    # SP_010 Increment-2 CRITICAL: top_contributor is a repo/component attribute, not a company
+    # metric — adding it to METRIC_VOCAB must NOT widen the repair gate (it's in _NON_COMPANY_KEYS).
+    assert is_known_metric("top contributor") is False
+    assert is_known_metric("top_contributor") is False
+    assert is_known_metric("lead contributor") is False
+    assert is_known_metric("leading contributor") is False
 
 
 def test_known_metric_excludes_pure_period_tokens():
