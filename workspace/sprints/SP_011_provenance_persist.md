@@ -190,28 +190,27 @@ answers (SP_012); eval assertions on it (SP_013).
 > Standard tier — floor = 2. Branched from post-SP_010 HEAD (SP_009 contract surface +
 > SP_010 normalize util both present).
 
-- **Iteration 1 — architect-reviewer (independent), NOT-GO → re-planned.** Findings:
-  C1 the promised Daniel→Wei/Arjun link conflict does **not** exist in the corpus (every
-  source agrees Daniel→Arjun→Wei) → reframed item 4 as infrastructure that must stay silent
-  on the consistent chart, with a synthetic unit fixture; C2 outright-removing the 47 seeded
-  `reports_to` edges is Foundational/high-blast-radius (feeds `_org_root_id`) and
-  unverifiable here → operator re-decided to **corroborate** (seed `as_of=None`), keeping the
-  backbone; H1 link windows must treat `valid_to=None` as open (+∞), not reuse claim
-  `_window`; H3 link sweep `seen_pairs` must read `link_a_id/link_b_id` and set
-  `subject_entity_id=from_entity_id`; H4 derive `kind` from `document_id` equality, not a
-  hardcoded `source_disagreement`; M1 allowlist exactly `{"reports_to"}`; M2 offsets must be
-  computed in `pipeline` via a new `grounding.locate_span` (ClaimOut has no offset fields) —
-  **no** `schemas.py` scope expansion; M3 integration test asserts the backbone set, not two
-  cherry-picked facts. All folded into the design above.
-- **Iteration 2 — author re-review against the revised design (Reviewer: architect-reviewer
-  iter-1 findings checklist).** Confirmed: no edit to `contracts/`, `schema.sql`, or
-  `repository.py`; `touches_paths` expansion is one test file (`test/unit/seed/test_run_seed.py`,
-  ≪50%); link semantics, allowlist, `kind` classification, and idempotency all addressed;
-  no remaining CRITICAL/HIGH. GO.
+- **Iteration 1** — architect-reviewer (independent), plan-blind: 2 CRITICAL + 4 HIGH/MEDIUM, NOT-GO → re-planned. Files reviewed: SP_011 plan, contradict.py, pipeline.py, grounding.py, schemas.py, run_seed.py, roster.py, repository.py, eval/questions.yaml, data/org-chart.md.
+  - C1 — the promised Daniel→Wei/Arjun link conflict does **not** exist in the corpus
+    (every source agrees Daniel→Arjun→Wei) → reframed item 4 as infrastructure that must stay
+    silent on the consistent chart, with a synthetic unit fixture.
+  - C2 — outright-removing the 47 seeded `reports_to` edges is Foundational/high-blast-radius
+    (feeds `_org_root_id`) and unverifiable here → operator re-decided to **corroborate**
+    (seed `as_of=None`), keeping the backbone.
+  - H1 link windows must treat `valid_to=None` as open (+∞), not reuse claim `_window`; H3
+    link sweep `seen_pairs` reads `link_a_id/link_b_id` + sets `subject_entity_id=from_entity_id`;
+    H4 derive `kind` from `document_id` equality, not a hardcoded `source_disagreement`;
+    M1 allowlist exactly `{"reports_to"}`; M2 compute offsets in `pipeline` via a new
+    `grounding.locate_span` (no `schemas.py` scope expansion); M3 integration test asserts the
+    backbone set. All folded into the design above.
+- **Iteration 2** — author re-review vs the revised design (Reviewer: architect-reviewer iter-1 findings checklist): 0 CRITICAL/HIGH remaining, GO. Files reviewed: SP_011 plan, contradict.py, pipeline.py, grounding.py, run_seed.py.
+  - Confirmed: no edit to `contracts/`, `schema.sql`, or `repository.py`; `touches_paths`
+    expansion is one test file (`test/unit/seed/test_run_seed.py`, ≪50%); link semantics,
+    allowlist, `kind` classification, and idempotency all addressed.
 
 ### Post-Implementation Review
 
-- **Iteration 1 — code-reviewer (independent, plan-blind over the diff), 1 HIGH + 2 MEDIUM.**
+- **Iteration 1** — code-reviewer (independent, plan-blind over the diff): 1 HIGH (fixed) + 2 MEDIUM (triaged), 0 blocking. Files reviewed: grounding.py, contradict.py, pipeline.py, run_seed.py, test_grounding.py, test_contradict.py, test_pipeline.py, test_run_seed.py, test_pipeline_integration.py.
   - HIGH (fixed): `locate_span`'s regex fallback used `re.search` (leftmost match) — a span
     whose normalized token sequence repeats in the chunk could anchor offsets to the wrong
     occurrence. Fixed with a uniqueness guard (`re.finditer`; commit an offset only when the
@@ -223,11 +222,10 @@ answers (SP_012); eval assertions on it (SP_013).
     stamp inserts a *second* (undated) reporting edge rather than a no-op, because the
     natural key's `COALESCE(as_of,…)` value changed. Fresh seed is clean; an existing DB
     needs a re-migrate/re-seed. Captured as a deploy gotcha (below + CLAUDE.md).
-- **Iteration 2 — re-verify on runtime evidence.** `uv run pytest test` → 320 passed, 36
-  skipped (db/smoke, no `DATABASE_URL`); `uv run mypy helixpay` → clean. Link-sweep,
-  offset-capture, and seed behaviors all asserted in the fake-repo suites; the link-pair SQL
-  path + cited-edge coexistence are asserted in the `db`-marked integration suite (runs when
-  a DB is present). No CRITICAL/HIGH outstanding.
+- **Iteration 2** — re-verify on runtime evidence: 0 CRITICAL/HIGH outstanding. Files reviewed: full pytest suite (320 passed / 36 db-smoke skipped) + mypy (clean) over helixpay/ and test/.
+  - Link-sweep, offset-capture, and seed behaviors asserted in the fake-repo suites; the
+    link-pair SQL path + cited-edge coexistence asserted in the `db`-marked integration suite
+    (runs when a DB is present).
 
 > **Deploy note (re-seed migration):** the seed `as_of` change alters the seeded reporting
 > edges' natural key. On a DB seeded *before* SP_011, run a fresh re-seed (or drop the
