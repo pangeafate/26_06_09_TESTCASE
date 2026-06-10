@@ -33,6 +33,23 @@ def test_render_substitutes_chunk_variables():
     assert "{{chunk_text}}" not in out  # placeholder consumed
 
 
+def test_extract_prompt_does_not_license_metric_as_subject():
+    # SP_019 Layer 1: the prompt must no longer permit a metric name as the subject, and the
+    # JSON example must not exemplify subject_type "metric". Guards the attribution intent.
+    out = render(
+        "extract_claims",
+        source_type="html", source_uri="data/d.html", as_of="2026-03-31",
+        roster_hint="(none)", chunk_text="body",
+    )
+    assert "metric name like" not in out  # the metric-as-subject license is gone
+    assert "primary entity" in out.lower()  # the default-subject rule is present
+    # `subject_type: "metric"` may appear ONLY inside a ✗-wrong negative example, never as
+    # guidance or in the output template.
+    for line in out.splitlines():
+        if '"subject_type": "metric"' in line:
+            assert "✗" in line or "wrong" in line.lower(), f"metric exemplified as valid: {line!r}"
+
+
 def test_unknown_prompt_raises_clear_error():
     with pytest.raises(PromptNotFoundError):
         load_prompt("does_not_exist")

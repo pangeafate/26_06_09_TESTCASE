@@ -27,11 +27,52 @@ from helixpay.ingest.contradict import detect
 from helixpay.ingest.embed import VoyageEmbedder
 from helixpay.ingest.extract.extractor import ChunkContext, ChunkExtractor
 from helixpay.ingest.extract.ledger import LossLedger
+from helixpay.ingest.extract.schemas import ClaimOut
+from helixpay.ingest.repair import is_known_metric, repair_metric_subject
 from helixpay.ingest.resolve import context_from_source_uri, resolve_mention
 
 log = logging.getLogger("helixpay.ingest.pipeline")
 
 Discover = Callable[[str], Iterable[tuple[SourceConnector, str]]]
+
+# The corpus's primary entity (the company every ownerless metric belongs to). It is
+# resolved + seed-validated at run start (``_resolve_primary_entity``) before it is used to
+# repair any claim, so a roster rename disables the metric-subject repair with a loud warning
+# rather than silently re-minting a duplicate. Single-company corpus assumption (CLAUDE.md §7).
+_PRIMARY_ENTITY_NAME = "HelixPay"
+
+# A claim-repair callable: ``ClaimOut -> ClaimOut``. Built once per run.
+ClaimRepair = Callable[[ClaimOut], ClaimOut]
+
+
+def _resolve_primary_entity(repo: Repository) -> Optional[str]:
+    """Resolve + seed-validate the corpus primary entity once per run.
+
+    Returns its canonical name when ``_PRIMARY_ENTITY_NAME`` resolves to a **seeded** roster
+    entity; otherwise logs a warning and returns ``None`` (metric-subject repair is then
+    disabled — never silently re-minting a duplicate on a roster rename). HIGH-3.
+    """
+    try:
+        ent = repo.resolve_entity(_PRIMARY_ENTITY_NAME, "other", None)
+    except Exception as exc:  # noqa: BLE001 — a resolution failure must not abort ingest
+        # Log the exception TYPE only — a DB error message can embed a connection string (§7).
+        log.warning("primary-entity resolve failed; metric-subject repair disabled", extra={"error_type": type(exc).__name__})
+        return None
+    if ent is None or ent.id is None or not getattr(ent, "seeded", False):
+        log.warning(
+            "primary entity not a seeded roster entity; metric-subject repair disabled",
+            extra={"primary_entity": _PRIMARY_ENTITY_NAME},
+        )
+        return None
+    return ent.canonical_name
+
+
+def _build_claim_repair(repo: Repository) -> ClaimRepair:
+    """Bind the Layer-0 repair to the seed-validated primary entity, or identity when disabled."""
+    primary = _resolve_primary_entity(repo)
+    if primary is None:
+        return lambda co: co
+    return lambda co: repair_metric_subject(co, primary_entity=primary, known_metric=is_known_metric)
 
 
 @dataclass
@@ -103,6 +144,7 @@ def run(
 
     report = IngestReport()
     seen_hashes: set[str] = set()
+    repair_claim = _build_claim_repair(repo)
 
     for connector, path in discover_fn(root):
         doc, chunks = connector.load(path)
@@ -117,7 +159,7 @@ def run(
 
         doc_id = repo.upsert_document(doc)
         report.documents += 1
-        _ingest_document(repo, doc, doc_id, chunks, emb, ext, report, roster_hint or "")
+        _ingest_document(repo, doc, doc_id, chunks, emb, ext, report, roster_hint or "", repair_claim)
 
     # contradiction sweep over every (subject, predicate) we touched this run
     for subject_id, predicate in report.touched_groups:
@@ -153,6 +195,7 @@ def _ingest_document(
     extractor: _Extractor,
     report: IngestReport,
     roster_hint: str,
+    repair_claim: ClaimRepair,
 ) -> None:
     if not chunks:
         return
@@ -175,6 +218,9 @@ def _ingest_document(
             ),
         )
         for claim_out in result.claims:
+            # Layer 0 (SP_019): re-attribute a known-company-metric-as-subject to the document's
+            # primary entity BEFORE resolution, so the value resolves as the company's metric.
+            claim_out = repair_claim(claim_out)
             subject_id = resolve_mention(
                 repo, claim_out.subject, entity_type=claim_out.subject_type, context=ctx
             )

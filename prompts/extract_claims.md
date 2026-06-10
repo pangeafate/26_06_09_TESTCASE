@@ -16,13 +16,20 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
 ## What to extract
 
 **Claims** — a property value asserted about a subject. One claim per asserted fact.
-- `subject`: the entity the fact is about (a person, team, customer, product, the company,
-  or a metric name like "ARR"). Use the clearest surface name in the text.
-- `subject_type`: one of `person | team | customer | product | metric | other` (omit if unsure).
-- `predicate`: the property. For business metrics use the metric's name as written
-  ("ARR", "annual recurring revenue", "Q1 revenue", "NPS", "churn", "headcount",
-  "monthly burn", "runway", "net new merchants", …) — it is canonicalized downstream, so
-  do not invent codes.
+- `subject`: the **entity** the fact is about — a person, team, customer, product, the
+  company, or a named region/subsidiary. **Never a bare metric name.** A KPI or financial
+  figure with no explicitly named owner belongs to the document's **primary entity**: this
+  corpus is about **HelixPay**, so an ownerless company metric (a dashboard card, a board
+  figure) has `subject` = `HelixPay`. If the figure is explicitly scoped to a region or
+  subsidiary (e.g. "Brasil Q1 revenue", "HelixPay Brasil"), use that scoped entity as the
+  subject (`HelixPay Brasil`) — never collapse a regional figure onto HelixPay.
+- `subject_type`: one of `person | team | customer | product | other` for the subject entity
+  (use `other` for the company / a region). **Do not use `metric` as a subject_type for a
+  company KPI** — the metric is the *predicate*, not the subject.
+- `predicate`: the property — the **canonical metric name, with any time period stripped off**
+  ("revenue", not "Q1 2026 revenue"; "nps"; "arr"; "headcount"; "runway"; "monthly burn";
+  "net new merchants"; …). The reporting period goes in `as_of`, not in the predicate. It is
+  canonicalized downstream, so do not invent codes.
 - `object_value`: the value **exactly as written**, including units and currency
   (`"SGD 14.2M"`, `"47"`, `"412"`, `"end of June"`). Keep the as-of date attached to the
   number it belongs to.
@@ -30,8 +37,10 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
   gives a quarter (e.g. "Q1 2026"), emit the quarter-**end** date directly:
   Q1→`YYYY-03-31`, Q2→`YYYY-06-30`, Q3→`YYYY-09-30`, Q4→`YYYY-12-31`
   (e.g. "Q1 2026" → `2026-03-31`). A bare year "2026" → `2026-12-31`.
-  Use the value's own date first; fall back to the document as_of only if the value
-  names no date of its own. Omit only if truly undated.
+  Use the value's own reporting period first; fall back to the document as_of only if the
+  value names no period of its own. **A dashboard's "As of <date>" header is NOT the metric's
+  as_of** — a card labelled "Q1 2026 Revenue" is `as_of` `2026-03-31` (the quarter end), even
+  if the dashboard was exported on 2026-04-21. Omit only if truly undated.
 - `confidence`: 0.0–1.0, how clearly the span states this.
 - `evidence`: a **verbatim** quote copied from this span that contains the value (do not
   paraphrase the number — copy it exactly; this span is checked against the source).
@@ -57,6 +66,16 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
 - Skip pure chrome (navigation, boilerplate). Prefer fewer, well-grounded claims over many
   speculative ones.
 
+## Attribution examples (the metric-as-subject trap)
+
+A KPI is a property **of an entity**; the metric is the predicate, never the subject.
+
+- A dashboard card "Q1 2026 Revenue (SGD) 14.2M":
+  - ✗ wrong: `{"subject": "Q1 2026 Revenue", "subject_type": "metric", "predicate": "Q1 2026 Revenue", "object_value": "14.2M"}`
+  - ✓ right: `{"subject": "HelixPay", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 14.2M", "as_of": "2026-03-31"}`
+- A region row "Brasil Q1 Revenue — SGD equiv 4.8M" (scoped, so it stays on the region):
+  - ✓ right: `{"subject": "HelixPay Brasil", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 4.8M", "as_of": "2026-03-31"}`
+
 ## Output — STRICT JSON ONLY
 
 Return a single JSON object and nothing else (a lone ```json fence is tolerated but not
@@ -65,7 +84,7 @@ required). It must match this shape exactly:
 ```
 {
   "claims": [
-    {"subject": "...", "subject_type": "metric", "predicate": "...",
+    {"subject": "...", "subject_type": "other", "predicate": "...",
      "evidence": "<verbatim quote from the span containing the value>",
      "object_value": "...", "as_of": "YYYY-MM-DD", "confidence": 0.0, "hypothetical": false}
   ],

@@ -95,7 +95,8 @@ def resolve_mention(
         return None
 
     folded = fold_name(name)
-    for variant in _dedup([name, folded]):
+    variants = _dedup([name, folded])
+    for variant in variants:
         ent = repo.resolve_entity(variant, entity_type, context)
         if ent is not None and ent.id is not None:
             return ent.id
@@ -103,7 +104,22 @@ def resolve_mention(
     if not folded:
         # an honorific-only / punctuation-only mention ("Dr.") is not a real entity
         return None
+
     if entity_type in allow_create_types:
+        # Layer 2 (SP_019): seeded-roster snap BEFORE minting. A typed resolve missing does NOT
+        # mean the mention is new — a company/entity name mis-typed (e.g. "HelixPay" tagged
+        # ``metric``) misses the type filter and would mint a duplicate. Try a TYPE-AGNOSTIC
+        # resolve and snap to an existing **seeded** roster row instead. Snap only to a seeded
+        # entity (never another minted row) and only when the resolve is unambiguous —
+        # ``resolve_entity`` returns ``None`` for the two-Marias / two-Tans bare-name trap, so
+        # the snap can never bridge two distinct seeded entities. Running it only on the mint
+        # path (not for a non-creatable person/team miss, which is dropped) avoids a second DB
+        # round-trip and any cross-type bridge. (iText2KG / ReLiK pattern.)
+        # Invariant assumed: no two seeded entities share a canonical name across types.
+        for variant in variants:
+            ent = repo.resolve_entity(variant, None, context)
+            if ent is not None and ent.id is not None and ent.seeded:
+                return ent.id
         new_id = repo.upsert_entity(Entity(canonical_name=name, entity_type=entity_type, seeded=False))
         log.info("created new entity", extra={"name": name, "entity_type": entity_type, "created": True})
         return new_id

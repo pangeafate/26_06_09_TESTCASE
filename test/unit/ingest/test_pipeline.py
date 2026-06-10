@@ -284,6 +284,56 @@ def test_roster_hint_is_threaded_into_extraction():
     assert cap.seen == ["Daniel Tan (person)"]
 
 
+def test_layer0_repairs_dashboard_metric_subject_to_company():
+    # SP_019 Layer 0: the exact .replay-cache surface forms (metric-as-subject) must land on
+    # the seeded company, not a minted metric row.
+    repo = _repo_with_roster()  # seeds HelixPay (other)
+    doc = _doc("data/dashboards/april-2026-kpi-dashboard.html", "h1")
+    extr = ScriptedExtractor({"c1": ExtractionOut(claims=[
+        ClaimOut(subject="Q1 2026 Revenue", subject_type="metric",
+                 predicate="Q1 2026 Revenue (SGD)", object_value="SGD 14.2M", as_of="2026-04-21"),
+        ClaimOut(subject="Aggregate NPS", subject_type="metric",
+                 predicate="Aggregate NPS", object_value="47", as_of="2026-04-21"),
+    ])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+
+    hp = next(e for e in repo.entities if e.canonical_name == "HelixPay").id
+    assert repo.claims and all(c.subject_entity_id == hp for c in repo.claims)  # company, not metric
+    assert not any(e.entity_type == "metric" for e in repo.entities)  # no metric|... minted
+    # NPS canonicalizes through the alias even in the simplified fake ("aggregate nps" -> nps)
+    assert any(c.predicate == "nps" and c.object_value == "47" for c in repo.claims)
+
+
+def test_layer0_leaves_regional_metric_distinct_no_false_merge():
+    # the planted Brasil value (unknown metric key) must NOT collapse onto the company.
+    repo = _repo_with_roster()
+    doc = _doc("data/images/revenue-trend-q1-2026.jpeg", "h1")
+    extr = ScriptedExtractor({"c1": ExtractionOut(claims=[
+        ClaimOut(subject="Brasil revenue", subject_type="metric", predicate="Brasil actual revenue",
+                 object_value="SGD 4.8M", as_of="2026-03-31")])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+    hp = next(e for e in repo.entities if e.canonical_name == "HelixPay").id
+    # the Brasil claim is NOT on HelixPay (it minted/stayed its own subject) — no false merge.
+    assert not any(c.subject_entity_id == hp for c in repo.claims)
+
+
+def test_layer0_disabled_when_primary_entity_unseeded():
+    # No seeded HelixPay -> repair disables (loud warning). The metric claim then falls back to
+    # the pre-Layer-0 behavior (mints metric|Revenue); crucially it never RE-MINTS a HelixPay
+    # row, so a roster rename can't silently fabricate the company entity.
+    repo = FakeRepo()
+    doc = _doc("data/x.html", "h1")
+    extr = ScriptedExtractor({"c1": ExtractionOut(claims=[
+        ClaimOut(subject="Revenue", subject_type="metric", predicate="revenue", object_value="SGD 14.2M")])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+    assert not any(e.canonical_name == "HelixPay" for e in repo.entities)  # no fabricated company
+    # the claim is not lost — it lands on the (minted) metric subject, exactly as before Layer 0
+    assert any(e.canonical_name == "Revenue" and e.entity_type == "metric" for e in repo.entities)
+
+
 def test_same_source_newer_value_supersedes_not_duplicates():
     repo = _repo_with_roster()
     d1 = _doc("data/x.md", "h1", as_of=date(2026, 3, 31))

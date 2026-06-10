@@ -280,10 +280,7 @@ for variant in variants:
 > change is folded into the design above, and the cache audit they prompted produced the
 > load-bearing diagnosis correction (the recall blocker is as_of/shape, not just subject).
 
-- **Iteration 1** — architect-reviewer, plan-as-written. Files reviewed: SP_019 plan,
-  pipeline.py, resolve.py, extract/schemas.py, seed/metric_vocab.py, db/repository.py
-  (resolve_entity/canonical_predicate), ingest/contradict.py, contracts/models.py,
-  scripts/run_smoke.py, seed/roster.py. **0 CRITICAL after folding; 2 raised then resolved.**
+- **Iteration 1** — architect-reviewer, plan-as-written; 0 CRITICAL after folding (2 CRITICAL + 3 HIGH raised then resolved). Files reviewed: pipeline.py, resolve.py, extract/schemas.py, seed/metric_vocab.py, db/repository.py, ingest/contradict.py, contracts/models.py, scripts/run_smoke.py, seed/roster.py.
   - **CRITICAL (measurement unbuildable in-scope):** the planned "$0 replay that clears
     claims/minted entities" needs a delete path that does not exist (`Repository` has no delete;
     `replay.py` is SP_010's; no raw SQL allowed outside `helixpay/db/`). **Resolved:** drop the
@@ -302,11 +299,7 @@ for variant in variants:
   - **HIGH/MEDIUM (contradiction assertions both directions):** **Resolved:** acceptance asserts
     no *false* `revenue` contradiction on HelixPay from a Brasil source, and (post-re-record) the
     *true* planted same-period contradiction is surfaced.
-- **Iteration 2** — code-reviewer, plan-as-written, adversarial. Files reviewed: SP_019 plan,
-  resolve.py, pipeline.py, extract/schemas.py, seed/metric_vocab.py, db/repository.py,
-  prompts/extract_claims.md, extract/extractor.py, extract/prompts.py, test/unit/ingest/
-  test_resolve.py, test/unit/ingest/test_pipeline.py. **0 CRITICAL; 2 HIGH + 3 MEDIUM/LOW, all
-  folded.**
+- **Iteration 2** — code-reviewer, plan-as-written, adversarial; 0 CRITICAL, 2 HIGH + 3 MEDIUM/LOW, all folded. Files reviewed: resolve.py, pipeline.py, extract/schemas.py, seed/metric_vocab.py, db/repository.py, prompts/extract_claims.md, extract/extractor.py, extract/prompts.py, test/unit/ingest/test_resolve.py, test/unit/ingest/test_pipeline.py.
   - **HIGH (FakeRepo lacks seeded-first filter):** the snap test would pass for the wrong reason.
     **Resolved:** test plan adds the seeded-first filter to `FakeRepo.resolve_entity` + a
     "minted dupe present at snap time" case.
@@ -321,9 +314,33 @@ for variant in variants:
 
 ### Post-Implementation Review
 
-> Plan-blind review over changed code + tests after `pytest` passes (Rule 9). Floor = 2.
+> Two independent reviewers, **plan-blind** (Rule 9 / Context Isolation — code + tests only,
+> no plan), after `pytest` (617 passed, 38 skipped) and `mypy` (clean). Floor = 2. All HIGH
+> findings fixed and re-tested before close.
 
-- _(to be completed after implementation)_
+- **Iteration 1** — code-reviewer, plan-blind, adversarial; 0 CRITICAL, 3 HIGH (REQUEST-CHANGES) — all fixed. Files reviewed: repair.py, resolve.py, pipeline.py, prompts/extract_claims.md, test_repair.py, test_resolve.py, test_pipeline.py, test_prompts.py.
+  - **HIGH (broad-alias false-positive repair):** `is_known_metric` fired on milestone aliases
+    (`launch`/`cutover`/`completion` → `ga_target`/`completion_target`) whose domain is a
+    project/product, so a Confluence-GA-as-metric would wrongly land on the company. **Fixed:**
+    `_NON_COMPANY_KEYS = {ga_target, completion_target}` excluded from `KNOWN_KEYS`; added
+    `test_known_metric_excludes_milestone_predicates_with_common_word_aliases`.
+  - **HIGH (`_strip_period` → empty string passed to `canonical_key`):** safe-by-accident.
+    **Fixed:** explicit empty-after-strip guard in `is_known_metric`; added
+    `test_known_metric_excludes_pure_period_tokens` (`"2026"`, `"FY"`, `"Q1 2026"`).
+  - **HIGH (connection string in exception log):** `_resolve_primary_entity` logged `str(exc)`
+    which a psycopg error can embed a DSN into. **Fixed:** log `type(exc).__name__` only (§7).
+  - MEDIUM/LOW (incomplete disabled-repair test, same-name-snap invariant, per-mention double DB
+    round-trip, module-constant guard) — all folded: the snap moved **inside the mint branch**
+    (one round-trip, no cross-type bridge), the disabled-repair test strengthened, an import-time
+    assert added for `_COMPANY_TYPE`. Re-ran: 617 passed, mypy clean.
+- **Iteration 2** — architect-reviewer, plan-blind, blast-radius focus; 0 CRITICAL/HIGH — APPROVE-WITH-NITS. Files reviewed: repair.py, resolve.py, pipeline.py, replay.py, contradict.py, roster.py, metric_vocab.py.
+  Verified: the per-run primary-entity resolve is one
+  round-trip (not per-claim), wrapped + degrades to identity on a fresh/renamed roster (the $0
+  replay path is safe); repair-before-resolve / canonicalize-after ordering is sound and
+  idempotent; the contradiction sweep gains *correct* same-subject pairings while the regional
+  Brasil value stays distinct (`windows_overlap` + unknown-key no-op). Nits noted for the
+  hand-off: the once-per-run scope under a "primary entity" name, the duplicated `_strip_period`
+  vs `repository._strip_period_qualifier`, and the in-memory-vocab vs DB-`metric_vocab` coupling.
 
 ## Hand-off
 

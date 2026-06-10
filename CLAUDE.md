@@ -315,3 +315,15 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
 - Ingestion is idempotent on `content_hash`; re-running on unchanged data is a
   no-op. Seeding and `add_claim` are idempotent on their natural keys, so re-seeding
   is safe.
+- **Metric-as-subject (SP_019):** the extractor sometimes stores a dashboard KPI with the
+  *metric* as the claim subject (`metric|Q1 2026 Revenue`) instead of the company, so the value
+  is unfindable as "HelixPay's revenue". `helixpay/ingest/repair.py` re-attributes known
+  **company** metrics to the seeded company before resolution; milestone predicates
+  (`ga_target`/`completion_target`) are deliberately **excluded** (their domain is a project/
+  product, e.g. Project Confluence's GA), and regional metrics (`HelixPay Brasil revenue`) are
+  left distinct so they never falsely merge into the company.
+- **Dashboard `as_of` is NOT the metric's `as_of` (SP_019):** a "Q1 2026 Revenue" card is
+  `as_of` the **quarter end** (2026-03-31), even if the dashboard header says "As of
+  2026-04-21". The grader (`eval/run.py`) matches the value's reporting period — a baked-wrong
+  as_of in the extraction cache can **only** be fixed by a re-record, never by post-processing
+  (this is why the deterministic attribution fixes don't move golden recall at $0).

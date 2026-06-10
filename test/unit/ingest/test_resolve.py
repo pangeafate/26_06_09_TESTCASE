@@ -49,6 +49,13 @@ class FakeRepo:
             return None
         if len(cands) == 1:
             return cands[0]
+        # seeded-first disambiguation (mirrors PostgresRepository.resolve_entity, SP_015 fix #1):
+        # when a name is ambiguous, restrict to seeded candidates before context filtering.
+        seeded = [c for c in cands if c.seeded]
+        if seeded:
+            cands = seeded
+            if len(cands) == 1:
+                return cands[0]
         if context:
             kept = self._filter(cands, context)
             if len(kept) == 1:
@@ -138,3 +145,46 @@ def test_context_from_source_uri_maps_known_departments():
     assert context_from_source_uri("data/interviews/customer_success/Maria_Santos.md")["department"] == "Customer Success"
     assert context_from_source_uri("data/interviews/engineering/Sara_Wijaya.md")["department"] == "Engineering"
     assert context_from_source_uri("data/overview.md") == {}  # no department token
+
+
+# --------------------------------------------------------------------------- #
+# Layer 2 (SP_019): seeded-roster snap before minting
+# --------------------------------------------------------------------------- #
+def test_company_name_mistyped_metric_snaps_to_seeded_not_minted():
+    repo = FakeRepo()
+    hp = repo.seed("HelixPay", "other")
+    before = len(repo.entities)
+    # "HelixPay" tagged `metric`: the typed resolve misses (seeded is `other`), but the
+    # seeded-snap must find it type-agnostically rather than minting metric|HelixPay.
+    assert resolve_mention(repo, "HelixPay", entity_type="metric") == hp
+    assert len(repo.entities) == before  # no metric|HelixPay dupe minted
+
+
+def test_snap_prevents_dupe_across_repeated_resolution():
+    # The guarantee is that the dupe is never BORN: on a clean roster, every metric-typed
+    # "HelixPay" mention snaps to the seeded row, so no metric|HelixPay is ever minted (H-1).
+    repo = FakeRepo()
+    hp = repo.seed("HelixPay", "other")
+    before = len(repo.entities)
+    assert resolve_mention(repo, "HelixPay", entity_type="metric") == hp
+    assert resolve_mention(repo, "HelixPay", entity_type="metric") == hp  # still seeded, no dupe
+    assert len(repo.entities) == before
+
+
+def test_snap_does_not_bridge_two_marias():
+    repo = _two_marias()  # two SEEDED persons named "Maria"
+    before = len(repo.entities)
+    # the type-agnostic snap must NOT bridge an ambiguous bare name to a seeded person.
+    # person is non-creatable, so the only way to return non-None would be a (wrong) bridge.
+    assert resolve_mention(repo, "Maria", entity_type="person") is None
+    assert len(repo.entities) == before
+
+
+def test_genuinely_new_open_class_mention_still_mints():
+    repo = FakeRepo()
+    repo.seed("HelixPay", "other")
+    before = len(repo.entities)
+    # a real new customer with no seeded match still mints (snap only fires on a seeded hit).
+    cid = resolve_mention(repo, "Brand New Co", entity_type="customer")
+    assert cid is not None and len(repo.entities) == before + 1
+    assert repo.entities[-1].seeded is False
