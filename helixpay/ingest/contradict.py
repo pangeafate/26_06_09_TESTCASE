@@ -11,66 +11,35 @@ points therefore do **not** overlap — so a periodic metric's Q4 vs Q1 values a
 contradiction, while two same-period sources that disagree are. This keeps precision on the
 planted dashboard-vs-board-deck conflict (both stamped Q1 2026) without flooding false
 positives across quarters.
+
+The exception is ``_TARGET_PREDICATES`` (GA/completion targets): there ``as_of`` is the
+assertion date, not a validity window, so two differing forward targets stated on
+different dates are a real temporal slip and bypass the overlap gate (the planted
+Confluence GA contradiction). They still pass through ``values_conflict``, so identical
+target phrasings agree and only a genuine change surfaces.
 """
 
 from __future__ import annotations
 
 import logging
-import math
-import re
 from datetime import date
 from typing import Optional
 
 from helixpay.contracts import Claim, Contradiction, Repository
 
+# Value normalization is the shared SP_009 substrate — one definition across contradiction
+# detection, the eval matcher, and consensus rollup, so equality never drifts between them.
+# Re-exported (see __all__) so existing `from helixpay.ingest.contradict import
+# normalize_value` imports (e.g. grounding.py) keep working without a second copy.
+from helixpay.ingest.normalize import normalize_value, values_conflict
+
 log = logging.getLogger("helixpay.ingest.contradict")
 
-_SCALE = {"k": 1_000.0, "m": 1_000_000.0, "b": 1_000_000_000.0}
-_CURRENCY = re.compile(r"\b(sgd|usd|brl|eur|myr)\b|[r$€£]", re.IGNORECASE)
-_UNICODE_MINUS = "−"  # − (spreadsheets/PDFs emit this, not ASCII -)
-# A value is treated as numeric ONLY when the whole cleaned string is a single number
-# (optional magnitude K/M/B, optional trailing %). This deliberately refuses to pull a
-# stray digit out of a label: "Q1 2026", "18 months", "v1.0" stay non-numeric and fall
-# back to text comparison, so quarter/duration/version strings are never mis-compared as
-# magnitudes (Stage-5: _NUM_RE word-boundary / "18 months"→18M defects).
-_PURE_NUM_RE = re.compile(r"-?\d[\d,]*\.?\d*\s*([kmb])?\s*%?", re.IGNORECASE)
-
-
-def normalize_value(value: Optional[str]) -> tuple[str, Optional[float]]:
-    """Return ``(casefolded_text, numeric_or_None)``. Strips currency symbols and folds
-    magnitude suffixes (K/M/B) so ``"SGD 14.2M"`` and ``"14.2M"`` compare equal, and
-    normalizes the Unicode minus sign so ``"−11%"`` and ``"-11%"`` compare equal. A value
-    is numeric only when the *entire* cleaned string is a number — never a digit pulled from
-    a label."""
-    if value is None:
-        return "", None
-    # text component: casefold + normalize the Unicode minus + collapse whitespace (so the
-    # text-comparison fallback also treats "−x" and "-x" as equal). Currency is stripped
-    # only for the *numeric* parse, not the returned text.
-    text = re.sub(r"\s+", " ", value.strip().casefold().replace(_UNICODE_MINUS, "-")).strip()
-    cleaned = re.sub(r"\s+", " ", _CURRENCY.sub(" ", text)).strip()
-    numeric: Optional[float] = None
-    m = _PURE_NUM_RE.fullmatch(cleaned)
-    if m:
-        suffix = (m.group(1) or "").lower()
-        num_text = cleaned.rstrip("%").strip()
-        if suffix:
-            num_text = num_text[: num_text.lower().rfind(suffix)]
-        try:
-            numeric = float(num_text.replace(",", "").strip()) * _SCALE.get(suffix, 1.0)
-        except ValueError:
-            numeric = None
-    return text, numeric
-
-
-def values_conflict(a: Optional[str], b: Optional[str]) -> bool:
-    if a is None or b is None:
-        return False  # a missing value is not a competing fact
-    ta, na = normalize_value(a)
-    tb, nb = normalize_value(b)
-    if na is not None and nb is not None:
-        return not math.isclose(na, nb, rel_tol=1e-9, abs_tol=1e-9)
-    return ta != tb
+# Predicates whose value is a forward target date and whose ``as_of`` is the assertion
+# date, not a validity window. A changed value across two assertion dates is a genuine
+# temporal slip (the planted Confluence GA contradiction), so ``detect`` skips the
+# window-overlap gate for these — scoped narrowly so periodic metrics stay unaffected.
+_TARGET_PREDICATES = frozenset({"ga_target", "completion_target"})
 
 
 def _window(c: Claim) -> tuple[Optional[date], Optional[date]]:
@@ -118,7 +87,9 @@ def detect(repo: Repository, subject_id: int, predicate: str) -> int:
     ``(subject_id, predicate)`` group. Returns the number of contradiction rows written
     (the repo dedupes pairs, so a re-run adds none). ``predicate`` must already be
     canonicalized by the caller."""
-    live = [c for c in repo.get_claims(subject_id, predicate) if c.superseded_by is None]
+    live = [
+        c for c in repo.get_claims(subject_id, predicate) if c.superseded_by is None
+    ]
     # Pairs already recorded — so a re-run detects nothing new and ``written`` reflects only
     # newly-added rows (the repo also dedupes, but the count must be honest too).
     seen_pairs: set[tuple[int, int]] = {
@@ -141,7 +112,10 @@ def detect(repo: Repository, subject_id: int, predicate: str) -> int:
                 continue  # already recorded — re-run is a no-op
             if not values_conflict(a.object_value, b.object_value):
                 continue
-            if not windows_overlap(a, b):
+            # Target/deadline predicates carry an assertion-date as_of, not a validity
+            # window, so a changed target across two dates is a real slip — skip the
+            # window gate for them (scoped, so periodic-metric time-series stay clean).
+            if predicate not in _TARGET_PREDICATES and not windows_overlap(a, b):
                 continue
             seen_pairs.add(pair)
             kind = classify(a, b)
@@ -157,8 +131,17 @@ def detect(repo: Repository, subject_id: int, predicate: str) -> int:
             )
             written += 1
     if written:
-        log.info("contradictions detected", extra={"subject_id": subject_id, "predicate": predicate, "count": written})
+        log.info(
+            "contradictions detected",
+            extra={"subject_id": subject_id, "predicate": predicate, "count": written},
+        )
     return written
 
 
-__all__ = ["detect", "normalize_value", "values_conflict", "windows_overlap", "classify"]
+__all__ = [
+    "detect",
+    "normalize_value",
+    "values_conflict",
+    "windows_overlap",
+    "classify",
+]

@@ -27,7 +27,9 @@ TEAM = "team"
 PRODUCT = "product"
 ORG = "other"
 
-_BULLET_RE = re.compile(r"^(?P<indent>\s*)-\s+\*\*(?P<name>[^*]+?)\*\*\s*[—-]\s*(?P<rest>.+)$")
+_BULLET_RE = re.compile(
+    r"^(?P<indent>\s*)-\s+\*\*(?P<name>[^*]+?)\*\*\s*[—-]\s*(?P<rest>.+)$"
+)
 _TABLE_ROW_RE = re.compile(r"^\|(?P<cells>.+)\|\s*$")
 _SECTION_RE = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 _SUBSECTION_RE = re.compile(r"^###\s+(?P<title>.+?)\s*$")
@@ -40,8 +42,8 @@ class RosterParse:
     people: dict[str, Entity] = field(default_factory=dict)
     teams: dict[str, Entity] = field(default_factory=dict)
     reports_to: list[tuple[str, str]] = field(default_factory=list)  # (child, manager)
-    dotted: list[tuple[str, str]] = field(default_factory=list)      # (a, b)
-    member_of: list[tuple[str, str]] = field(default_factory=list)   # (person, team)
+    dotted: list[tuple[str, str]] = field(default_factory=list)  # (a, b)
+    member_of: list[tuple[str, str]] = field(default_factory=list)  # (person, team)
 
 
 def _clean(s: str) -> str:
@@ -56,7 +58,13 @@ def _split_role_location(rest: str) -> tuple[str, str | None]:
     return rest.strip(), None
 
 
-def _add_person(parse: RosterParse, name: str, role: str | None, location: str | None, department: str | None) -> None:
+def _add_person(
+    parse: RosterParse,
+    name: str,
+    role: str | None,
+    location: str | None,
+    department: str | None,
+) -> None:
     name = _clean(name)
     if not name:
         return
@@ -69,14 +77,22 @@ def _add_person(parse: RosterParse, name: str, role: str | None, location: str |
     if department:
         attrs["department"] = department
     if ent is None:
-        parse.people[name] = Entity(canonical_name=name, entity_type=PERSON, attributes=attrs, seeded=True)
+        parse.people[name] = Entity(
+            canonical_name=name, entity_type=PERSON, attributes=attrs, seeded=True
+        )
     else:
         # enrich without clobbering an existing role/location
         for k, v in attrs.items():
             ent.attributes.setdefault(k, v)
     if department:
         team = parse.teams.setdefault(
-            department, Entity(canonical_name=department, entity_type=TEAM, attributes={"kind": "department"}, seeded=True)
+            department,
+            Entity(
+                canonical_name=department,
+                entity_type=TEAM,
+                attributes={"kind": "department"},
+                seeded=True,
+            ),
         )
         if (name, department) not in parse.member_of:
             parse.member_of.append((name, department))
@@ -97,10 +113,10 @@ def parse_org_chart(text: str) -> RosterParse:
     parse = RosterParse()
     lines = text.splitlines()
 
-    department: str | None = None        # current ## department (e.g. "Engineering")
-    section_manager: str | None = None   # the "under X" person for the current section
-    section_arrow: str | None = None     # the "→ P" target (section head reports to P)
-    sub_manager: str | None = None       # current ### sub-section manager (Sales)
+    department: str | None = None  # current ## department (e.g. "Engineering")
+    section_manager: str | None = None  # the "under X" person for the current section
+    section_arrow: str | None = None  # the "→ P" target (section head reports to P)
+    sub_manager: str | None = None  # current ### sub-section manager (Sales)
     bullet_stack: list[tuple[int, str]] = []  # (indent, name) for nested bullets
     in_exec = False
 
@@ -159,7 +175,9 @@ def parse_org_chart(text: str) -> RosterParse:
             name = _clean(cells[0])
             cell_role = cells[1] if len(cells) > 1 else None
             cell_location = cells[2] if len(cells) > 2 else None
-            reports_to_cell = _clean(cells[3]) if len(cells) > 3 and cells[3].strip() else None
+            reports_to_cell = (
+                _clean(cells[3]) if len(cells) > 3 and cells[3].strip() else None
+            )
             _add_person(parse, name, cell_role, cell_location, department)
             manager = sub_manager or section_manager
             if in_exec and reports_to_cell:
@@ -211,12 +229,26 @@ class OverviewParse:
 
 # Data-derived from overview.md. Products are DISTINCT entities — POS ≠ POS
 # Self-Service (the overview stresses this).
+# The parent company is a SEPARATE entity from the subsidiary (SP_010): company-level
+# metrics (revenue/runway/headcount/NPS/net-new-merchants) attach to "HelixPay", the
+# Brasil subsidiary's to "HelixPay Brasil". Never alias one to the other, or the 14.2M
+# company revenue and the 4.8M Brasil revenue collapse into a false contradiction.
+_COMPANY_PARENT = ("HelixPay", ORG, ["Helix", "the company"])
 _COMPANY = ("HelixPay Brasil", ORG, ["HPB", "Helix Brasil"])
+# Cross-doc initiatives the golden ga_target/completion_target facts hang off — not in
+# the org chart, so seed them here or those facts have no subject to resolve to (SP_010).
+_PROJECTS = [
+    ("Project Confluence", ["Confluence", "Confluence platform"]),
+    ("CRM migration", ["CRM cutover", "HubSpot migration", "CRM migration project"]),
+]
 _PRODUCTS = [
     ("HelixPay Core", ["Core"]),
     ("HelixPay POS", ["POS"]),
     ("HelixPay Loyalty", ["Loyalty"]),
-    ("HelixPay POS Self-Service", ["POS Self-Service", "Self-Serve", "POS SS", "Self-Service"]),
+    (
+        "HelixPay POS Self-Service",
+        ["POS Self-Service", "Self-Serve", "POS SS", "Self-Service"],
+    ),
     ("HelixPay Tap", ["Tap"]),
 ]
 
@@ -229,12 +261,37 @@ def parse_overview(_text: str | None = None) -> OverviewParse:
     deterministic and order-stable).
     """
     parse = OverviewParse()
+    parent_name, parent_etype, parent_aliases = _COMPANY_PARENT
+    parse.entities[parent_name] = Entity(
+        canonical_name=parent_name,
+        entity_type=parent_etype,
+        attributes={"kind": "company"},
+        seeded=True,
+    )
+    for a in parent_aliases:
+        parse.aliases.append((parent_name, a))
     name, etype, aliases = _COMPANY
-    parse.entities[name] = Entity(canonical_name=name, entity_type=etype, attributes={"kind": "subsidiary"}, seeded=True)
+    parse.entities[name] = Entity(
+        canonical_name=name,
+        entity_type=etype,
+        attributes={"kind": "subsidiary"},
+        seeded=True,
+    )
     for a in aliases:
         parse.aliases.append((name, a))
+    for proj_name, proj_aliases in _PROJECTS:
+        parse.entities[proj_name] = Entity(
+            canonical_name=proj_name,
+            entity_type=ORG,
+            attributes={"kind": "project"},
+            seeded=True,
+        )
+        for a in proj_aliases:
+            parse.aliases.append((proj_name, a))
     for pname, palias in _PRODUCTS:
-        parse.entities[pname] = Entity(canonical_name=pname, entity_type=PRODUCT, attributes={}, seeded=True)
+        parse.entities[pname] = Entity(
+            canonical_name=pname, entity_type=PRODUCT, attributes={}, seeded=True
+        )
         for a in palias:
             parse.aliases.append((pname, a))
     return parse

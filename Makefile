@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 APP_RUN := $(COMPOSE) run --rm app
 
-.PHONY: up ingest demo test fmt down logs ps
+.PHONY: up ingest ingest-record replay demo test fmt down logs ps
 
 ## up: build + start db & app, wait for db health, then migrate + seed (idempotent)
 up:
@@ -23,6 +23,19 @@ up:
 ## ingest: idempotent ingestion over ./data inside the app container
 ingest:
 	$(APP_RUN) helixpay ingest ./data
+
+## ingest-record: the one PAID extraction over ./data. Persists claims AND writes the
+## replay cache to ./.replay-cache (host-mounted so `replay` reuses it). Tier-1 cost.
+ingest-record:
+	$(COMPOSE) run --rm -v "$(PWD)/.replay-cache:/app/.replay-cache" app \
+		python -m helixpay.ingest.replay record ./data --cache-dir ./.replay-cache
+
+## replay: re-run resolve→canonicalize→persist→contradict from the cache with ZERO API
+## calls (no LLM, no embeddings). Needs a prior `ingest-record`; run `up` first to apply
+## new seeds/vocab. A prompt/chunking/document-content change requires a fresh record.
+replay:
+	$(COMPOSE) run --rm -v "$(PWD)/.replay-cache:/app/.replay-cache" app \
+		python -m helixpay.ingest.replay replay ./data --cache-dir ./.replay-cache
 
 ## demo: run the eval harness (Agent 6) against the running app. Runs as a module
 ## (`-m eval.run`) so `eval` is importable from /app, and mounts the host `test/`

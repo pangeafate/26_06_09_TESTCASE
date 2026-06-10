@@ -6,7 +6,12 @@ import logging
 from datetime import date
 
 from helixpay.contracts import Claim, Contradiction
-from helixpay.ingest.contradict import classify, detect, normalize_value, values_conflict
+from helixpay.ingest.contradict import (
+    classify,
+    detect,
+    normalize_value,
+    values_conflict,
+)
 
 _Q1 = date(2026, 3, 31)
 
@@ -17,23 +22,43 @@ class FakeRepo:
         self.contradictions: list[Contradiction] = []
 
     def get_claims(self, subject_id, predicate=None):
-        return [c for c in self._claims if c.subject_entity_id == subject_id
-                and (predicate is None or c.predicate == predicate)]
+        return [
+            c
+            for c in self._claims
+            if c.subject_entity_id == subject_id
+            and (predicate is None or c.predicate == predicate)
+        ]
 
     def get_contradictions(self, subject_id=None):
-        return [c for c in self.contradictions
-                if subject_id is None or c.subject_entity_id == subject_id]
+        return [
+            c
+            for c in self.contradictions
+            if subject_id is None or c.subject_entity_id == subject_id
+        ]
 
     def add_contradiction(self, c: Contradiction) -> None:
-        pair = tuple(sorted((c.claim_a_id, c.claim_b_id)))  # mirror the repo's pair-dedup
-        if any(tuple(sorted((x.claim_a_id, x.claim_b_id))) == pair for x in self.contradictions):
+        pair = tuple(
+            sorted((c.claim_a_id, c.claim_b_id))
+        )  # mirror the repo's pair-dedup
+        if any(
+            tuple(sorted((x.claim_a_id, x.claim_b_id))) == pair
+            for x in self.contradictions
+        ):
             return
         self.contradictions.append(c)
 
 
 def _claim(cid, value, *, as_of=_Q1, doc=1, valid_to=None, superseded_by=None):
-    return Claim(id=cid, subject_entity_id=10, predicate="revenue", object_value=value,
-                 as_of=as_of, valid_to=valid_to, superseded_by=superseded_by, document_id=doc)
+    return Claim(
+        id=cid,
+        subject_entity_id=10,
+        predicate="revenue",
+        object_value=value,
+        as_of=as_of,
+        valid_to=valid_to,
+        superseded_by=superseded_by,
+        document_id=doc,
+    )
 
 
 def test_same_period_two_sources_disagree_is_source_disagreement():
@@ -53,7 +78,12 @@ def test_equal_values_across_currency_formatting_is_not_a_conflict():
 
 def test_different_as_of_points_do_not_overlap():
     # Q4 vs Q1 revenue: a legitimate period change, not a contradiction.
-    repo = FakeRepo([_claim(1, "SGD 11.0M", as_of=date(2025, 12, 31)), _claim(2, "SGD 14.2M", as_of=_Q1)])
+    repo = FakeRepo(
+        [
+            _claim(1, "SGD 11.0M", as_of=date(2025, 12, 31)),
+            _claim(2, "SGD 14.2M", as_of=_Q1),
+        ]
+    )
     assert detect(repo, 10, "revenue") == 0
 
 
@@ -71,7 +101,9 @@ def test_non_numeric_same_period_disagreement():
 
 
 def test_superseded_claims_are_ignored():
-    repo = FakeRepo([_claim(1, "SGD 13.9M", doc=1, superseded_by=2), _claim(2, "SGD 14.2M", doc=2)])
+    repo = FakeRepo(
+        [_claim(1, "SGD 13.9M", doc=1, superseded_by=2), _claim(2, "SGD 14.2M", doc=2)]
+    )
     assert detect(repo, 10, "revenue") == 0  # only one live claim
 
 
@@ -86,7 +118,9 @@ def test_detection_does_not_mutate_claims():
     claims = [_claim(1, "SGD 14.2M", doc=1), _claim(2, "SGD 13.9M", doc=2)]
     repo = FakeRepo(claims)
     detect(repo, 10, "revenue")
-    assert all(c.superseded_by is None and c.valid_to is None for c in claims)  # never collapsed
+    assert all(
+        c.superseded_by is None and c.valid_to is None for c in claims
+    )  # never collapsed
 
 
 def test_normalize_value_parses_magnitude_and_currency():
@@ -132,10 +166,64 @@ def test_values_conflict_with_a_missing_value_is_not_a_conflict():
 def test_classify_undated_cross_source_is_source_disagreement():
     a = _claim(1, "end of June", as_of=None, doc=1)
     b = _claim(2, "end of Q3", as_of=date(2026, 4, 21), doc=2)
-    assert classify(a, b) == "source_disagreement"  # not "temporal" just because one is undated
+    assert (
+        classify(a, b) == "source_disagreement"
+    )  # not "temporal" just because one is undated
     c = _claim(3, "x", as_of=None, doc=1)
     d = _claim(4, "y", as_of=None, doc=2)
     assert classify(c, d) == "source_disagreement"
+
+
+def test_word_form_numbers_are_not_false_conflicts():
+    # SP_010: contradict now delegates to the shared normalize util, which folds word
+    # cardinals and word magnitudes. These pairs must NOT fire (no_false_contradiction).
+    assert values_conflict("18 months", "eighteen months") is False
+    assert values_conflict("SGD 14.2M", "14.2 million") is False
+    # a genuine disagreement still fires
+    assert values_conflict("SGD 14.2M", "SGD 13.9M") is True
+
+
+def _tclaim(cid, value, as_of, *, subject=20, predicate="ga_target", doc=1):
+    return Claim(
+        id=cid,
+        subject_entity_id=subject,
+        predicate=predicate,
+        object_value=value,
+        as_of=as_of,
+        document_id=doc,
+    )
+
+
+def test_target_predicate_slip_surfaces_despite_disjoint_as_of():
+    # ga_target: as_of is the assertion date, not a validity window. A changed target
+    # across two assertion dates (both valid_to=None) is a real temporal slip and must
+    # surface — even though the point-windows do not overlap.
+    a = _tclaim(1, "end of June 2026", date(2026, 4, 15), doc=1)
+    b = _tclaim(2, "end of Q3 2026", date(2026, 5, 12), doc=2)
+    repo = FakeRepo([a, b])
+    assert detect(repo, 20, "ga_target") == 1
+    assert repo.contradictions[0].kind == "temporal"
+
+
+def test_completion_target_slip_also_surfaces_and_is_idempotent():
+    a = _tclaim(
+        1, "end of June 2026", date(2026, 4, 15), predicate="completion_target", doc=1
+    )
+    b = _tclaim(
+        2, "end of August 2026", date(2026, 5, 12), predicate="completion_target", doc=2
+    )
+    repo = FakeRepo([a, b])
+    assert detect(repo, 20, "completion_target") == 1
+    assert detect(repo, 20, "completion_target") == 0  # re-run writes nothing new
+
+
+def test_non_target_metric_time_series_still_not_a_conflict():
+    # The window bypass is scoped: revenue at two disjoint as_of points is a legitimate
+    # series, not a contradiction — the bypass must NOT regress this.
+    a = _tclaim(1, "SGD 11.0M", date(2025, 12, 31), predicate="revenue", doc=1)
+    b = _tclaim(2, "SGD 14.2M", date(2026, 3, 31), predicate="revenue", doc=2)
+    repo = FakeRepo([a, b])
+    assert detect(repo, 20, "revenue") == 0
 
 
 def test_detect_is_idempotent_on_rerun():

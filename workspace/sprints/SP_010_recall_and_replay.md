@@ -4,7 +4,7 @@ tier: Standard
 features: [replay-tier, recall-company-entity, recall-metric-vocab, recall-normalize, recall-target-contradiction]
 user_stories: []
 schema_touched: false
-structure_touched: true
+structure_touched: false
 status: In Progress
 isolation: branch-only
 branch: sprint/SP_010-recall-replay
@@ -186,8 +186,7 @@ structure (SP_013); provenance persistence/link sweep (SP_011).
 > 27%→85% symptom and the Confluence contradiction must be replayed against the system at
 > close-out, not just asserted.
 
-- **Iteration 1 — architect-reviewer (plan-blind over the plan + real code). Verdict: NOT
-  implementable as written; 2 CRITICAL.**
+- **Iteration 1** — architect-reviewer, plan-blind. 2 CRITICAL + 1 HIGH (all resolved below). Files reviewed: SP_010 plan, pipeline.py, extractor.py, contradict.py, normalize.py, roster.py, metric_vocab.py, facts.yaml, eval/run.py.
   - CRITICAL: cache key on `content_hash` is unreachable from `extract(chunk, ctx)` —
     neither `Chunk` nor `ChunkContext` carries it; `hash(chunk.text)` cross-contaminates
     identical chunk text across documents. **Resolved:** key on `(source_uri, ordinal)`
@@ -199,8 +198,7 @@ structure (SP_013); provenance persistence/link sweep (SP_011).
   - HIGH: recall figures are modeled; `DEFAULT_RECALL_BAR=0.80` vs the plan's 85% target
     with eval out of scope. **Resolved:** 85% is a measured read-out (`--recall-bar 0.85`),
     not a constant change; SP_013 owns the gate.
-- **Iteration 2 — code-reviewer (plan-blind, adversarial). Verdict: 3 CRITICAL traps,
-  all folded into scope.**
+- **Iteration 2** — code-reviewer, plan-blind adversarial. 3 CRITICAL traps (all folded into scope below). Files reviewed: contradict.py, resolve.py, roster.py, run_seed.py, metric_vocab.py, fixtures.py, facts.yaml, eval/run.py, test_contradict.py.
   - CRITICAL: `windows_overlap` point-window trap means vocab alone never materializes the
     Confluence contradiction. **Resolved:** target-predicate window bypass added to scope
     (operator-approved fold-in).
@@ -215,9 +213,22 @@ structure (SP_013); provenance persistence/link sweep (SP_011).
 
 ### Post-Implementation Review
 
-- Iteration 1 — (pending; plan-blind over replay wrappers + seed/vocab/normalize/window)
-- Iteration 2 — (pending; re-verify recall ≥85% + Confluence surfaced on the replay tier
-  as runtime evidence — DB-gated, recorded as operator smoke if no DB at close-out)
+- **Iteration 1** — code-reviewer, plan-blind over changed code + tests. 3 HIGH operational findings fixed pre-commit (below), 1 MEDIUM accepted, 0 blocking. Files reviewed: replay.py, contradict.py, normalize.py, roster.py, metric_vocab.py, repository.py, Makefile, test_replay.py, test_contradict.py.
+  - HIGH: replay on a fresh/empty DB would feed zero-vector embeddings into `add_chunks`
+    (no prior chunk rows to protect via `ON CONFLICT DO NOTHING`), silently breaking
+    retrieval. **Fixed:** replay refuses to run when `repo.known_content_hashes()` is empty.
+  - HIGH: `CachingExtractor` always called the paid inner extractor, so re-running
+    `ingest-record` re-billed every chunk. **Fixed:** a pre-existing cache file is a hit
+    (paid call skipped); `--force` overrides for an intentional re-record.
+  - HIGH: `_slug` was not collision-free as documented (two paths can slugify alike).
+    **Fixed:** the cache filename now carries a `source_uri` sha256 digest; docstring
+    corrected. New tests cover all three.
+  - MEDIUM (accepted, not a code bug): delegating to the shared `normalize_value` removes
+    pre-existing false positives (`~18`≡`18`, `3,424`≡`3424`, word-magnitudes). Any
+    contradiction rows written under the *old* contradict-local normalize for those exact
+    pairs are not auto-deleted on re-run — a clean replay starts from the record run's DB,
+    so this only matters to a long-lived DB and is noted for operator awareness.
+- **Iteration 2** — pending runtime verification (DB-gated): 0 CRITICAL expected; re-verify recall ≥85% + Confluence surfaced on the replay tier as runtime evidence. Files reviewed: pending operator smoke (no DB in the build environment — see Hand-off).
 
 ## Hand-off
 
