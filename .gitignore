@@ -1,7 +1,18 @@
 .env
+# SP_015 smoke-loop env (carries the helixpay_smoke Postgres password). The bare `.env`
+# line above does NOT match these — list them explicitly (and never use `.env.*`, which
+# would swallow the committed `.env.example`).
+.env.smoke
+eval/smoke/.env
+# SP_015 generated smoke corpus + filtered oracle — regenerate with `python -m eval.smoke.build_smoke`.
+eval/smoke/data/
+eval/smoke/facts.yaml
 *.key
 *.pem
 credentials*
+# SP_016 production seed dump (full corpus DB) — never tracked; prod_seed.sh traps it for removal.
+*.pgdump
+.prod_seed_dump.pgdump
 __pycache__/
 .pytest_cache/
 *.pyc
