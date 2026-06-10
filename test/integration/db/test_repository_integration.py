@@ -56,6 +56,18 @@ def test_canonical_predicate_via_db(pg_repo):
     assert pg_repo.canonical_predicate("unknown_metric") == "unknown_metric"  # never raises
 
 
+def test_canonical_predicate_strips_period_qualifier(pg_repo):
+    # SP_015 fix #2: a period-qualified predicate the extractor emits ("Q1 2026 revenue",
+    # whose period is redundant with the claim's as_of) must canonicalize onto the bare key
+    # after the leading quarter/half/FY/year qualifier is stripped.
+    pg_repo.upsert_metric("revenue", "Revenue", ["revenue", "q1 revenue"])
+    assert pg_repo.canonical_predicate("Q1 2026 revenue") == "revenue"
+    assert pg_repo.canonical_predicate("2026 revenue") == "revenue"
+    assert pg_repo.canonical_predicate("revenue") == "revenue"
+    # a distinct suffix is NOT collapsed — it stays its own (unknown) predicate
+    assert pg_repo.canonical_predicate("Q1 2026 revenue vs plan") == "Q1 2026 revenue vs plan"
+
+
 def test_seed_is_idempotent_and_resolves_name_traps(pg_repo):
     s1 = seed_all(pg_repo, DATA, with_fixture=True)
     s2 = seed_all(pg_repo, DATA, with_fixture=True)
@@ -106,6 +118,23 @@ def test_resolve_entity_context_disambiguates_shared_alias(pg_repo):
     assert got is not None and got.id == silva
     got2 = pg_repo.resolve_entity("Maria", entity_type="person", context={"department": "Customer Success"})
     assert got2 is not None and got2.id == santos
+
+
+def test_resolve_entity_prefers_unique_seeded_over_minted_dupe(pg_repo):
+    # Pollution case: a seeded company entity ("other|HelixPay") plus a minted same-name dupe
+    # of a different type ("metric|HelixPay", as ingest mints when the extractor guesses the
+    # type). A bare-name lookup must prefer the *unique seeded* entity rather than returning
+    # None on the ambiguity (CLAUDE.md §7 roster-first; the smoke-proving recall fix).
+    seeded = pg_repo.upsert_entity(Entity(canonical_name="HelixPay", entity_type="other", seeded=True))
+    pg_repo.upsert_entity(Entity(canonical_name="HelixPay", entity_type="metric", seeded=False))
+    got = pg_repo.resolve_entity("HelixPay")
+    assert got is not None and got.id == seeded
+
+    # But two *seeded* same-name entities stay ambiguous → None (the two-Marias / two-Tans
+    # trap is NOT weakened: the seeded-restriction keeps both, so there is no unique winner).
+    pg_repo.upsert_entity(Entity(canonical_name="Dup", entity_type="person", seeded=True))
+    pg_repo.upsert_entity(Entity(canonical_name="Dup", entity_type="team", seeded=True))
+    assert pg_repo.resolve_entity("Dup") is None
 
 
 def test_contradiction_pair_dedups_regardless_of_order(pg_repo):

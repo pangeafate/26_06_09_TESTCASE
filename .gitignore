@@ -7,6 +7,9 @@ eval/smoke/.env
 # SP_015 generated smoke corpus + filtered oracle — regenerate with `python -m eval.smoke.build_smoke`.
 eval/smoke/data/
 eval/smoke/facts.yaml
+# SP_015 generated proving artifacts (per-doc ledger + machine result) — regenerate via scripts/run_smoke.py.
+eval/smoke/ledger.json
+eval/smoke/SP015_smoke_result.json
 *.key
 *.pem
 credentials*

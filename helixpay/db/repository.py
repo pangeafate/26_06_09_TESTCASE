@@ -12,6 +12,7 @@ transactions. ``from_url`` is a convenience constructor for tooling and tests.
 from __future__ import annotations
 
 import math
+import re
 from datetime import date
 from typing import Any, Optional
 
@@ -29,6 +30,24 @@ from helixpay.contracts import (
     OrgNode,
 )
 from helixpay.db.connection import DictConnection, connect
+
+
+# A leading reporting-period qualifier on a predicate ("Q1 2026 revenue", "FY2026 ebitda").
+# The period is redundant with the claim's ``as_of``; stripping it lets the period-qualified
+# predicate the extractor emits canonicalize onto the bare metric key. (The pure-path mirror
+# in ``helixpay.seed.metric_vocab`` is SP_010's to add; kept here in the db layer so
+# ``canonical_predicate`` — the path the pipeline and eval actually use — works on its own.)
+_PERIOD_TOKEN_RE = re.compile(r"^(?:q[1-4]|h[12]|fy|20\d{2})\b[\s\-/]*", re.IGNORECASE)
+
+
+def _strip_period_qualifier(s: str) -> str:
+    out = s.strip()
+    while True:
+        m = _PERIOD_TOKEN_RE.match(out)
+        if not m or m.end() == 0:
+            break
+        out = out[m.end() :].strip()
+    return out
 
 
 def _vector_literal(vec: list[float]) -> str:
@@ -187,7 +206,19 @@ class PostgresRepository:
             return None
         if len(candidates) == 1:
             return candidates[0]
-        # Ambiguous — only a resolving context may break the tie; otherwise None.
+        # Roster-first disambiguation (CLAUDE.md §7: "matches the seeded roster first"): a
+        # seeded entity outranks a minted same-name dupe — e.g. the seeded company
+        # ``other|HelixPay`` vs a ``metric|HelixPay`` the extractor minted by guessing a
+        # different entity_type. Restrict to seeded candidates when any exist. This does NOT
+        # weaken the two-Marias / two-Tans trap: those are *two seeded* people, so the
+        # restriction keeps both and context still separates them below (and an all-minted
+        # ambiguity, e.g. two dupes of an unseeded name, stays ambiguous → None).
+        seeded = [c for c in candidates if c.seeded]
+        if seeded:
+            candidates = seeded
+            if len(candidates) == 1:
+                return candidates[0]
+        # Ambiguous among same-rank candidates — only a resolving context may break the tie.
         if context:
             filtered = self._filter_by_context(candidates, context)
             if len(filtered) == 1:
@@ -342,6 +373,23 @@ class PostgresRepository:
 
     def canonical_predicate(self, raw: str) -> str:
         raw_l = raw.strip().lower()
+        key = self._lookup_predicate(raw_l)
+        if key is not None:
+            return key
+        # SP_015 fix #2: the extractor emits period-qualified predicates ("Q1 2026 revenue")
+        # whose period duplicates the claim's as_of and so never matches a bare alias. Strip
+        # the leading quarter/half/FY/year qualifier and retry, so "Q1 2026 revenue" lands on
+        # "revenue" (and the planted same-quarter revenue contradiction can actually pair).
+        # A distinct suffix ("Q1 2026 revenue vs plan" → "revenue vs plan") still stays its
+        # own predicate — only an exact post-strip alias hit canonicalizes.
+        stripped = _strip_period_qualifier(raw_l)
+        if stripped and stripped != raw_l:
+            key = self._lookup_predicate(stripped)
+            if key is not None:
+                return key
+        return raw  # unknown → unchanged, never raises
+
+    def _lookup_predicate(self, raw_l: str) -> Optional[str]:
         with self.conn.cursor() as cur:
             cur.execute(
                 """
@@ -353,7 +401,7 @@ class PostgresRepository:
                 (raw_l, raw_l),
             )
             row = cur.fetchone()
-        return row["canonical_key"] if row else raw  # unknown → unchanged, never raises
+        return row["canonical_key"] if row else None
 
     # ------------------------------------------------------------------ #
     # retrieval
@@ -617,6 +665,37 @@ class PostgresRepository:
         with self.conn.cursor() as cur:
             cur.execute("SELECT content_hash FROM documents")
             return {r["content_hash"] for r in cur.fetchall()}
+
+    def audit_chunk_embeddings(self, source_uris: list[str]) -> dict[str, bool]:
+        """SP_015 $0 proving probe: per ``source_uri``, ``True`` iff the document has at
+        least one chunk and **every** chunk carries a non-null, non-zero-norm embedding.
+
+        Read-only; the raw SQL stays in the db layer (callers get a plain ``{uri: bool}``).
+        Non-zero norm is tested via the inner-product operator ``embedding <#> embedding``
+        (pgvector returns the *negative* inner product, i.e. ``-||v||**2`` ≤ 0, which is
+        strictly ``< 0`` exactly when the vector is non-zero) — version-safe, no ``l2_norm``
+        dependency. Catches the zero-vector / misconfigured-embed failure with no API call."""
+        out: dict[str, bool] = {}
+        with self.conn.cursor() as cur:
+            for uri in source_uris:
+                cur.execute(
+                    """
+                    SELECT count(*) AS n,
+                           count(*) FILTER (
+                               WHERE ch.embedding IS NOT NULL
+                                 AND (ch.embedding <#> ch.embedding) < 0
+                           ) AS good
+                    FROM documents d
+                    JOIN chunks ch ON ch.document_id = d.id
+                    WHERE d.source_uri = %s
+                    """,
+                    (uri,),
+                )
+                row = cur.fetchone()
+                n = int(row["n"]) if row else 0
+                good = int(row["good"]) if row else 0
+                out[uri] = n > 0 and good == n
+        return out
 
 
 __all__ = ["PostgresRepository"]
