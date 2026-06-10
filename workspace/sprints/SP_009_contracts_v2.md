@@ -5,7 +5,7 @@ features: [provenance-contracts-v2, provenance-schema-v2, repository-v2]
 user_stories: []
 schema_touched: true
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_009-contracts-v2
 worktree: ""
@@ -153,8 +153,8 @@ SP_012/SP_013. This sprint only makes the capability *exist*.
 
 ### Post-Implementation Review
 
-- Iteration 1 — (pending; plan-blind over the amended contracts/schema/repository)
-- Iteration 2 — (pending; re-verify against migrate + DB-integration runtime evidence)
+- **Iteration 1** (2026-06-10): code-reviewer (independent, plan-blind on the changed code) found 0 CRITICAL, 1 HIGH, 3 MEDIUM, 3 LOW. The HIGH: the approx-marker regex stripped the Latin "est." from a founding-year value ("est. 2015" → ". 2015"); fixed by dropping bare "est" ("estimated" already covers the hedge) + regression test. MEDIUM/LOW (bare ON CONFLICT future-constraint note, stricter link-source filter, known_content_hashes full scan, compound-word canonical text) accepted at scale, documented. Files reviewed: helixpay/contracts/models.py, helixpay/contracts/repository.py, helixpay/db/repository.py, helixpay/db/schema.sql, helixpay/db/migrate.py, helixpay/ingest/normalize.py, test/unit/ingest/test_normalize.py, test/unit/contracts/test_models.py, test/unit/contracts/test_protocols.py, test/integration/db/test_repository_integration.py. Verified column/placeholder parity (14/14, 8/8, 8/8), natural-key ON CONFLICT unchanged, LEAST/GREATEST index matches the Python pair sort.
+- **Iteration 2** (2026-06-10): security-auditor (independent, plan-blind) found 0 CRITICAL/HIGH/MEDIUM, 1 LOW (unbounded ANY(%s) id lists / known_content_hashes scan — internal callers, bounded corpus). Verdict CLEAN. Re-verified against runtime evidence: `uv run pytest test` 273 passed + 33 skipped on host, `uv run mypy helixpay` clean; in-container against pgvector/pg16 the 22 DB-integration tests pass (migrate idempotent, evidence/offsets + document_id round-trip, get_link_sources/get_chunk_sources/known_content_hashes/get_links(from_entity_id) correct, link-pair contradiction dedup). Files reviewed: helixpay/db/repository.py, helixpay/contracts/models.py, helixpay/contracts/repository.py, helixpay/db/schema.sql, helixpay/ingest/normalize.py. Confirmed every value parameterized, no secret/connection-string/PII logging, no ReDoS in the normalize regexes, char_start/char_end stored-only (never used as indices).
 
 ## Hand-off (to SP_011 / SP_012 / SP_013)
 
