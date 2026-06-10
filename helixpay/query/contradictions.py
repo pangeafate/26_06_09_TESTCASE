@@ -22,7 +22,41 @@ from typing import TYPE_CHECKING, Optional
 from helixpay.contracts import Contradiction
 
 if TYPE_CHECKING:
-    from helixpay.contracts import Repository
+    from helixpay.contracts import Claim, Repository
+
+# Human labels for the stored ``ContradictionKind`` enum (models.py). DRAGged-style
+# typing tells the synthesizer the *kind* of conflict before it writes (+5–9pp on correct
+# articulation per the query design doc). The label vocabulary is aligned to the enum —
+# there is no separate "opinion" key; ``source_disagreement`` is the source/opinion case.
+_KIND_LABELS = {
+    "value_conflict": "value",
+    "temporal": "temporal",
+    "source_disagreement": "source disagreement",
+}
+
+
+def label_for(c: Contradiction, claims_by_id: dict[int, "Claim"]) -> str:
+    """Type a surfaced conflict for the synthesis prompt.
+
+    Trusts the stored ``Contradiction.kind`` when present (never re-derives a value that
+    is already authoritative). Only when ``kind`` is unset (``None`` / unknown) does it
+    infer: a link-pair conflict is ``relationship``; otherwise ``temporal`` when both
+    claim sides are dated and disagree, else ``value``. Pure — the caller passes the
+    already-gathered claim map, so this makes no DB read (avoids an N+1)."""
+    if c.kind in _KIND_LABELS:
+        return _KIND_LABELS[c.kind]
+    if c.kind is not None:
+        # A stored kind we don't have a friendly label for (e.g. a future enum value):
+        # trust it and pass it through verbatim rather than silently re-deriving.
+        return c.kind
+    if c.link_a_id is not None or c.link_b_id is not None:
+        return "relationship"
+    a = claims_by_id.get(c.claim_a_id) if c.claim_a_id is not None else None
+    b = claims_by_id.get(c.claim_b_id) if c.claim_b_id is not None else None
+    if a is not None and b is not None and a.as_of is not None and b.as_of is not None:
+        if a.as_of != b.as_of:
+            return "temporal"
+    return "value"
 
 
 def _key(c: Contradiction) -> object:
@@ -73,4 +107,4 @@ def relevant(
     return _collect(repo, set(subject_ids), topics or [])
 
 
-__all__ = ["find", "relevant"]
+__all__ = ["find", "relevant", "label_for"]

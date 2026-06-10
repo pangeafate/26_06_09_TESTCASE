@@ -24,21 +24,24 @@ from datetime import date
 from typing import TYPE_CHECKING, Optional
 
 from helixpay.contracts import AnswerBundle, Contradiction, EntityDetail, OrgNode
+from helixpay.query import consensus
 from helixpay.query import contradictions as contra
 from helixpay.query import graph, retrieval, synthesis
 from helixpay.query.clients import Embedder, Synthesizer
 from helixpay.query.planner import Route
 from helixpay.query.planner import route as plan_route
-from helixpay.query.temporal import as_of_coverage, freshest_per_predicate
+from helixpay.query.temporal import as_of_coverage
 
 if TYPE_CHECKING:
-    from helixpay.contracts import Claim, Entity, Repository
+    from helixpay.contracts import Claim, Entity, Link, Repository
 
 log = logging.getLogger("helixpay.query")
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'&-]+")
 _MAX_SUBJECTS = 6
 _MAX_TERMS = 40  # cap repo lookups on a long question (perf guard)
+_MAX_LINKS = 12  # cap relationship facts pulled into grounding (perf/noise guard)
+_MAX_CLAIM_FACTS = 50  # cap claims fed to grounding/consensus (perf/noise guard)
 
 
 class HelixQueryEngine:
@@ -64,7 +67,12 @@ class HelixQueryEngine:
 
         chunks = []
         if plan.route in (Route.retrieval, Route.both):
-            chunks = [c for c, _ in retrieval.hybrid_search(self.repo, self.embedder, question, k=self.k)]
+            chunks = [
+                c
+                for c, _ in retrieval.hybrid_search(
+                    self.repo, self.embedder, question, k=self.k
+                )
+            ]
 
         terms = self._candidate_terms(question)
         subjects: list["Entity"] = []
@@ -79,8 +87,26 @@ class HelixQueryEngine:
             relevant = contra.relevant(self.repo, subject_ids=subject_ids, topics=terms)
 
         claim_facts = self._gather_claim_facts(subject_ids, relevant)
+        claims_by_id = {c.id: c for c in claim_facts if c.id is not None}
 
-        grounding_text, fact_index = synthesis.build_grounding(claim_facts, chunks)
+        # Relationship facts (Feature 2) + the link sides of any link-contradiction (so
+        # both sides of a graph conflict are citeable, not just surfaced).
+        links = self._gather_links(subject_ids, relevant)
+        name_map = {s.id: s.canonical_name for s in subjects if s.id is not None}
+
+        # Type each surfaced conflict (Feature 4) for the DRAGged-style prompt hint.
+        typed = [(c, contra.label_for(c, claims_by_id)) for c in relevant]
+        # Consensus/dissent rollup (Feature 3) over the candidate claims.
+        groups = consensus.rollup(claim_facts, self.repo.canonical_predicate)
+
+        facts_text, fact_index = synthesis.build_grounding(
+            claim_facts, chunks, links, name_map=name_map
+        )
+        grounding_text = (
+            facts_text
+            + synthesis.render_consensus(groups, fact_index)
+            + synthesis.render_contradictions(typed, fact_index)
+        )
         prompt = synthesis.render_prompt(question, grounding_text)
         try:
             output = self.synth.synthesize(prompt, schema=synthesis.SYNTH_SCHEMA)
@@ -103,6 +129,10 @@ class HelixQueryEngine:
             "retrieved_chunk_ids": [c.id for c in chunks],
             "subject_ids": subject_ids,
             "cited_claim_ids": cited_ids,
+            "cited_chunk_ids": [
+                c.chunk_id for c in citations if c.chunk_id is not None
+            ],
+            "cited_link_ids": [c.link_id for c in citations if c.link_id is not None],
             "contradiction_ids": [c.id for c in relevant],
         }
         log.info("ask.trace %s", self.last_trace)
@@ -123,7 +153,9 @@ class HelixQueryEngine:
         """Question words + adjacent bigrams (deduped, capped) — the candidate
         names/metric terms for subject resolution and contradiction topics."""
         words = _WORD_RE.findall(question)
-        terms = list(dict.fromkeys(words + [f"{a} {b}" for a, b in zip(words, words[1:])]))
+        terms = list(
+            dict.fromkeys(words + [f"{a} {b}" for a, b in zip(words, words[1:])])
+        )
         return terms[:_MAX_TERMS]
 
     def _resolve_subjects(self, terms: list[str]) -> list["Entity"]:
@@ -140,34 +172,59 @@ class HelixQueryEngine:
                 break
         return list(found.values())
 
+    def _gather_links(
+        self, subject_ids: list[int], relevant: list[Contradiction]
+    ) -> list["Link"]:
+        """Relationship facts for grounding: links out of each resolved subject, plus the
+        links of any subject named in a link-contradiction (so both sides of a graph
+        conflict become citeable ``[L#]`` markers). Deduped by id, ordered, capped."""
+        from_ids: set[int] = set(subject_ids)
+        for con in relevant:
+            if (con.link_a_id is not None or con.link_b_id is not None) and (
+                con.subject_entity_id is not None
+            ):
+                from_ids.add(con.subject_entity_id)
+        by_id: dict[int, "Link"] = {}
+        for sid in from_ids:
+            for link in self.repo.get_links(from_entity_id=sid):
+                if link.id is not None:
+                    by_id[link.id] = link
+        return [by_id[i] for i in sorted(by_id)][:_MAX_LINKS]
+
     def _gather_claim_facts(
         self, subject_ids: list[int], relevant: list[Contradiction]
     ) -> list["Claim"]:
-        """Freshest claim per (subject, predicate), PLUS both sides of every
-        relevant contradiction (so the answer can attribute each side, even when a
-        contradiction's subject was not one of the resolved subjects — review
-        code-C1). Ordered by claim id for deterministic citation markers."""
+        """All candidate claims for the resolved subjects, PLUS both sides of every
+        relevant contradiction (so each side is citeable even when its subject was not
+        resolved — review code-C1). Every claim is kept (not freshest-deduped): the
+        SP_012 consensus rollup is now what consolidates same-predicate duplicates, and
+        each member must keep its own ``[C#]`` marker so consensus + dissent stay
+        individually citeable. Ordered by claim id for deterministic markers; capped."""
         by_id: dict[int, "Claim"] = {}
-        facts: dict[int, "Claim"] = {}
+        contra_sides: set[int] = set()
         for sid in subject_ids:
-            claims = self.repo.get_claims(sid)
-            for c in claims:
+            for c in self.repo.get_claims(sid):
                 if c.id is not None:
                     by_id[c.id] = c
-            for c in freshest_per_predicate(claims).values():
-                if c.id is not None:
-                    facts[c.id] = c
         for con in relevant:
             sides = [cid for cid in (con.claim_a_id, con.claim_b_id) if cid is not None]
-            if any(cid not in by_id for cid in sides) and con.subject_entity_id is not None:
+            contra_sides.update(sides)
+            if (
+                any(cid not in by_id for cid in sides)
+                and con.subject_entity_id is not None
+            ):
                 # pull the conflicting subject's claims so both sides are citeable
                 for c in self.repo.get_claims(con.subject_entity_id):
                     if c.id is not None:
                         by_id[c.id] = c
-            for cid in sides:
-                if cid in by_id:
-                    facts[cid] = by_id[cid]
-        return [facts[cid] for cid in sorted(facts)]
+        # Cap for perf/noise, but NEVER drop a contradiction side — losing one would make
+        # the conflict unattributable in grounding (a silent half-resolution). Sides are
+        # retained in full; the cap only bounds the remaining claims.
+        sides_kept = sorted(i for i in by_id if i in contra_sides)
+        others = [i for i in sorted(by_id) if i not in contra_sides]
+        budget = max(0, _MAX_CLAIM_FACTS - len(sides_kept))
+        kept = sorted(set(sides_kept) | set(others[:budget]))
+        return [by_id[cid] for cid in kept]
 
 
 def build_default_engine(repo: "Repository", *, k: int = 8) -> HelixQueryEngine:
