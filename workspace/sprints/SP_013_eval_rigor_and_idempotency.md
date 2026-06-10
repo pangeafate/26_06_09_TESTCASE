@@ -5,7 +5,7 @@ features: [golden-grow, match-function-spec, contradiction-scoring, ingest-idemp
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_013-eval-idempotency
 worktree: .claude/worktrees/SP_013
@@ -174,8 +174,33 @@ In: `eval/**`, `test/golden/**`, and the `helixpay ingest` CLI entrypoint. Out: 
 
 ### Post-Implementation Review
 
-- Iteration 1 — (pending; plan-blind over eval + CLI diff)
-- Iteration 2 — (pending; re-verify macro recall + a zero-call re-ingest as runtime evidence)
+- **Iteration 1** — two independent plan-blind reviewers (code-reviewer + adversarial
+  general-purpose) over the staged code+tests diff; both **FIX-REQUIRED**, all findings
+  resolved + covered by new tests:
+  - *H1 (code-reviewer, HIGH) — numeric substring false-positive.* `_values_match`'s text
+    fallback let `"41"` match `"241"` (and `"412"`/`"4120"`) — inflating recall on the
+    commit-count collision probes. **Fixed:** block the substring fallback when BOTH sides
+    parse as numbers (one-numeric-one-text still falls back, so the un-parseable
+    `"−SGD 2.1M"` still matches `"-2.1M"`). New parametrized test.
+  - *MEDIUM (adversarial) — subject-blind contradiction scoring.* `score_contradiction`
+    matched on predicate only, so a spurious conflict on the WRONG subject scored CORRECT.
+    **Fixed:** `score_contradictions` resolves the golden subject and `score_contradiction`
+    requires the surfaced row's `subject_entity_id` to match (predicate-only fallback when
+    unresolved). New `test_contradiction_is_subject_aware`.
+  - *M1 — collision zip length mismatch* → guard added (malformed probe fails loudly).
+  - *M2 — `interview-silva-role` format mislabel* → relabeled `silva-role` `format: md`
+    (its true source org-chart.md); interview keeps 3 bar facts. collision_group (not
+    format) pairs it with `santos`.
+  - *L1 — misleading link "unresolved" message* → fixed (`fe.id is None` case).
+  - CLEAN: Wilson math (incl. n=0/p=0/p=1 edges), macro recall, collision pass/fail, CLI
+    single-repo idempotency wiring + DB-unavailable degrade, and all 39 grown golden facts
+    verified true-to-source by the adversarial reviewer against raw `data/` (PDFs, HTML,
+    code tables, org links).
+- **Iteration 2** — re-verified after fixes: `uv run pytest test` → 329 passed, 33 skipped
+  (DB-gated); `uv run mypy helixpay eval` clean. Macro-per-predicate recall + Wilson CI
+  render in `eval.run` output; zero-extractor-call re-ingest is proven by the pipeline unit
+  test `test_already_ingested_skips_embed_and_extract` (extractor calls == 0) plus the new
+  CLI wiring test. Live recall on the SP_010 replay DB is the certification step (hand-off).
 
 ## Hand-off
 

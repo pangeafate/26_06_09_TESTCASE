@@ -91,3 +91,18 @@ questions:
       Pacific QSR Holdings, Northwind, Boteco do Pedro (Larissa Mendes), Petisco RJ
       (Bruno Carvalho). NAME TRAP: Maria Santos (CS) ≠ Maria Silva (Sales).
     note: Tests entity resolution + alias handling + the two-Marias trap, each cited.
+
+  - id: q-latest-revenue-freshness
+    q: "What is HelixPay's most recent quarterly revenue figure, and as of when?"
+    checks: [uses_freshest_as_of, states_as_of, cites_source, no_false_contradiction]
+    golden_refs: [html-dashboard-revenue, html-q4-revenue]
+    expected: >-
+      The freshest quarterly figure is Q1 2026 revenue SGD 14.2M (period ending
+      2026-03-31), the latest closed quarter; the prior figure is Q4 2025 SGD 15.4M
+      (as of 2026-01-15). A correct answer PREFERS the fresher Q1 figure and says so,
+      and does NOT surface a contradiction — these are different periods, not a conflict.
+    note: >-
+      SP_013 (research P1 #6) — the prefer-fresh-and-say-so case, kept DISTINCT from the
+      surface-both contradiction question (q-confluence-timeline). `no_false_contradiction`
+      gates it: a Q1-vs-Q4 "conflict" would be a false positive (a time series, not a
+      disagreement). Feeds the reported As-of Correctness metric.

@@ -58,12 +58,38 @@ def _run_ingest(path: str) -> int:
             f"(helixpay.ingest.pipeline.run): {exc}\n"
         )
         return 2
+
+    # SP_013 — compute-idempotency: build ONE repo (lazy import, so the CLI still works
+    # before Agent 2/the DB lands) and pass `already_ingested=known_content_hashes()` so a
+    # re-run over unchanged data skips Voyage+Anthropic work entirely (the pipeline checks
+    # the hash BEFORE embed/extract). The SAME repo is threaded into pipeline.run so we hold
+    # a single connection. Best-effort: if the DB is unreachable, degrade to a full ingest.
+    repo = None
+    already_ingested = None
     try:
-        result = pipeline.run(path)
+        from helixpay.db.repository import PostgresRepository
+
+        repo = PostgresRepository.from_url()
+        already_ingested = repo.known_content_hashes().__contains__
+    except Exception as exc:  # DB unavailable → skip the optimisation, still ingest
+        sys.stderr.write(
+            "ingest: DB unavailable for the idempotency check, doing a full ingest "
+            f"({type(exc).__name__}: {exc})\n"
+        )
+        repo = None
+        already_ingested = None
+
+    try:
+        result = pipeline.run(path, repo=repo, already_ingested=already_ingested)
     except Exception as exc:  # surface a structured error, not a raw traceback
         sys.stderr.write(f"ingest failed for {path!r}: {type(exc).__name__}: {exc}\n")
         return 1
-    sys.stdout.write(f"ingest complete: {result}\n")
+    # Surface skipped_documents so idempotency is OBSERVABLE (a re-run prints "skipped N").
+    skipped = getattr(result, "skipped_documents", None)
+    summary = f"ingest complete: {result}"
+    if skipped is not None:
+        summary += f"  (skipped {skipped} unchanged)"
+    sys.stdout.write(summary + "\n")
     return 0
 
 

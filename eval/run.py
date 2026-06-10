@@ -27,6 +27,8 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -34,18 +36,33 @@ import yaml  # type: ignore[import-untyped]
 
 from helixpay.contracts import AnswerBundle, Claim, Link, QueryEngine, Repository
 
+# SP_013 — DECLARED, by-design coupling (pre-impl review H1): the matcher's numeric
+# value-equality reuses the SHARED normalizer (helixpay.ingest.normalize.values_equal)
+# so predicted-vs-gold equivalence cannot drift from contradiction detection. Its own
+# docstring names "the eval matcher (predicted-vs-gold equivalence — SP_013)" as an
+# intended consumer, so it is shared substrate, not a build slice. The oracle keeps an
+# INDEPENDENT equality assertion (eval-owned golden pairs in test_rigor.py) so a
+# normalizer regression is still caught by the grader's own tests — see eval/README.md.
+from helixpay.ingest.normalize import normalize_value as _shared_normalize, values_equal
+
 from eval.models import (
     GATING_CHECKS,
     AnswerResult,
     CheckResult,
+    CollisionVerdict,
+    ContradictionClass,
+    ContradictionVerdict,
+    EntityCollision,
     ExtractionReport,
     FactVerdict,
     GoalVerdict,
     GoldenContradiction,
     GoldenFact,
     GoldenSet,
+    PredicateSynonym,
     Question,
     Verdict,
+    wilson_interval,
 )
 
 log = logging.getLogger("helixpay.eval")
@@ -72,8 +89,17 @@ def load_golden(path: Path = DEFAULT_GOLDEN) -> GoldenSet:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     facts = [GoldenFact.model_validate(f) for f in raw.get("facts", [])]
     cons = [GoldenContradiction.model_validate(c) for c in raw.get("contradictions", [])]
+    syns = [PredicateSynonym.model_validate(s) for s in raw.get("predicate_synonyms", [])]
+    cols = [EntityCollision.model_validate(c) for c in raw.get("entity_collisions", [])]
     _assert_unique_ids([f.id for f in facts], "golden fact")  # a dup id would mask a fact
-    return GoldenSet(facts=facts, contradictions=cons)
+    _assert_unique_ids([s.id for s in syns], "predicate synonym")
+    _assert_unique_ids([c.id for c in cols], "entity collision")
+    return GoldenSet(
+        facts=facts,
+        contradictions=cons,
+        predicate_synonyms=syns,
+        entity_collisions=cols,
+    )
 
 
 def load_questions(path: Path = DEFAULT_QUESTIONS) -> list[Question]:
@@ -84,11 +110,29 @@ def load_questions(path: Path = DEFAULT_QUESTIONS) -> list[Question]:
 
 
 # --------------------------------------------------------------------------- #
-# Value / URI normalization (matching tolerance — review M1)                  #
+# The match function (SP_013 — research P0 #4: specify it, don't leave it implicit)
+#
+#   A golden fact MATCHES a claim/link iff ALL of:
+#     subject     resolved ``entity_id`` equal (Repository.resolve_entity with the
+#                 fact's source_uri as context — _check_claim_fact / _check_link_fact)
+#     predicate   canonical_predicate(fact) == canonical_predicate(claim)
+#     value       _values_match: numeric equality via the SHARED normalizer
+#                 (helixpay.ingest.normalize.values_equal — currency/magnitude/word-
+#                 number aware), with a documented substring fallback for free TEXT
+#                 (dates/labels the numeric path can't compare, e.g. "end of Q3 2026")
+#     source_uri  _uri_matches: same basename, or golden is a substring of the claim's
+#     as_of       _as_of_matches: EXACT, within ±AS_OF_TOLERANCE_DAYS, or carried by the
+#                 claim's source citation (a dashboard exported 04-21 may stamp either
+#                 the export date or the Q1 period end) — documented in eval/README.md
 # --------------------------------------------------------------------------- #
+AS_OF_TOLERANCE_DAYS = 0  # exact by default (research §B: EM is the honest metric)
+
+
 def normalize_value(s: Optional[str]) -> str:
     """Lowercase, strip currency/symbols/punctuation and collapse whitespace so
-    ``"SGD 14.2M"`` matches ``"14.2m"`` and ``"$14.2 million"``."""
+    ``"SGD 14.2M"`` matches ``"14.2m"`` and ``"$14.2 million"``. Used for the TEXT
+    substring fallback + URI matching; numeric value-equality goes through the shared
+    ``values_equal`` (see ``_values_match``)."""
     if s is None:
         return ""
     out = s.lower()
@@ -102,6 +146,23 @@ def normalize_value(s: Optional[str]) -> str:
 
 
 def _values_match(golden: str, claimed: Optional[str]) -> bool:
+    """Two-tier (pre-impl review C1): the SHARED ``values_equal`` first — numerically
+    close when both sides are pure numbers (so "SGD 14.2M" == "$14.2 million" and
+    "−2.1M" == "-2.1M"), else canonical-text equal. Then a documented substring fallback
+    on the local text normalization, so free-text dates/labels the numeric path can't
+    compare ("end of Q3 2026" inside a sentence) still match."""
+    if claimed is None:
+        return False
+    if values_equal(golden, claimed):
+        return True
+    # Post-impl review H1: when BOTH sides are pure numbers, ``values_equal`` already gave
+    # the definitive answer (False) — do NOT fall through to substring, or "41" would match
+    # "241" and "412" would match "4120", silently inflating numeric recall. (One numeric +
+    # one text side still uses the fallback, so "−SGD 2.1M" vs the parseable "-2.1M" — which
+    # the shared parser can't read as a number because of the currency between sign and
+    # digits — still matches on text.)
+    if _shared_normalize(golden)[1] is not None and _shared_normalize(claimed)[1] is not None:
+        return False
     g, c = normalize_value(golden), normalize_value(claimed)
     if not g or not c:
         return False
@@ -116,19 +177,33 @@ def _uri_matches(golden_uri: str, claimed_uri: Optional[str]) -> bool:
     )
 
 
+def _as_of_matches(
+    golden_as_of: Optional[date],
+    claim_as_of: Optional[date],
+    source_as_ofs: list[Optional[date]],
+) -> bool:
+    """EXACT (or within ±AS_OF_TOLERANCE_DAYS) against the claim's own ``as_of`` OR any
+    of its source-citation dates. A golden fact with no ``as_of`` does not constrain."""
+    if golden_as_of is None:
+        return True
+    candidates = [claim_as_of, *source_as_ofs]
+    tol = timedelta(days=AS_OF_TOLERANCE_DAYS)
+    return any(d is not None and abs(d - golden_as_of) <= tol for d in candidates)
+
+
 # --------------------------------------------------------------------------- #
 # Level 1 — extraction check                                                  #
 # --------------------------------------------------------------------------- #
 def _check_claim_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
+    pred = repo.canonical_predicate(fact.predicate)  # the macro-recall grouping key
     entity = repo.resolve_entity(fact.subject, context={"source_uri": fact.source_uri})
     if entity is None or entity.id is None:
-        return FactVerdict(fact.id, Verdict.missing, f"subject '{fact.subject}' unresolved")
-    pred = repo.canonical_predicate(fact.predicate)
+        return FactVerdict(fact.id, Verdict.missing, f"subject '{fact.subject}' unresolved", predicate=pred)
     claims: list[Claim] = repo.get_claims(entity.id, pred)
     if not claims:  # fall back to all claims, filter by canonicalized predicate
         claims = [c for c in repo.get_claims(entity.id) if repo.canonical_predicate(c.predicate) == pred]
     if not claims:
-        return FactVerdict(fact.id, Verdict.missing, f"no claim on ({fact.subject}, {pred})")
+        return FactVerdict(fact.id, Verdict.missing, f"no claim on ({fact.subject}, {pred})", predicate=pred)
 
     best = Verdict.missing
     detail = "claim(s) exist but value/source/as_of differ"
@@ -142,14 +217,11 @@ def _check_claim_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
             best = _worst(best, Verdict.mismatch)
             detail = "right value, wrong/absent source"
             continue
-        asof_ok = fact.as_of is None or c.as_of == fact.as_of or any(
-            s.as_of == fact.as_of for s in sources
-        )
-        if asof_ok:
-            return FactVerdict(fact.id, Verdict.found, "")
+        if _as_of_matches(fact.as_of, c.as_of, [s.as_of for s in sources]):
+            return FactVerdict(fact.id, Verdict.found, "", predicate=pred)
         best = _worst(best, Verdict.mismatch)
         detail = f"right value+source, as_of {c.as_of} != {fact.as_of}"
-    return FactVerdict(fact.id, best, detail)
+    return FactVerdict(fact.id, best, detail, predicate=pred)
 
 
 def _check_link_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
@@ -158,16 +230,16 @@ def _check_link_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
     fe = repo.resolve_entity(from_name, context={"source_uri": fact.source_uri})
     te = repo.resolve_entity(to_name, context={"source_uri": fact.source_uri})
     if fe is None or te is None or fe.id is None or te.id is None:
-        unresolved = from_name if fe is None else to_name
-        return FactVerdict(fact.id, Verdict.missing, f"endpoint '{unresolved}' unresolved")
+        unresolved = from_name if (fe is None or fe.id is None) else to_name
+        return FactVerdict(fact.id, Verdict.missing, f"endpoint '{unresolved}' unresolved", predicate=link_type)
     links: list[Link] = repo.get_links(link_type)
     for link in links:
         if link.from_entity_id == fe.id and link.to_entity_id == te.id:
-            return FactVerdict(fact.id, Verdict.found, "")
+            return FactVerdict(fact.id, Verdict.found, "", predicate=link_type)
     for link in links:  # reversed direction → a real but mis-directed extraction
         if link.from_entity_id == te.id and link.to_entity_id == fe.id:
-            return FactVerdict(fact.id, Verdict.mismatch, f"{link_type} present but reversed")
-    return FactVerdict(fact.id, Verdict.missing, f"no {link_type} {from_name}->{to_name}")
+            return FactVerdict(fact.id, Verdict.mismatch, f"{link_type} present but reversed", predicate=link_type)
+    return FactVerdict(fact.id, Verdict.missing, f"no {link_type} {from_name}->{to_name}", predicate=link_type)
 
 
 def _worst(a: Verdict, b: Verdict) -> Verdict:
@@ -227,7 +299,14 @@ def evaluate_check(name: str, bundle: AnswerBundle) -> bool:
     raise ValueError(f"unknown check: {name}")
 
 
-def check_answers(engine: QueryEngine, questions: list[Question]) -> list[AnswerResult]:
+def check_answers(
+    engine: QueryEngine,
+    questions: list[Question],
+    bundles_out: Optional[dict[str, AnswerBundle]] = None,
+) -> list[AnswerResult]:
+    """Grade each question's checks against its ``ask()`` bundle. If ``bundles_out`` is
+    given it is populated ``{question_id: bundle}`` so the caller can score contradictions
+    off the SAME ask() (no second LLM call)."""
     results: list[AnswerResult] = []
     for q in questions:
         started = time.monotonic()
@@ -238,6 +317,8 @@ def check_answers(engine: QueryEngine, questions: list[Question]) -> list[Answer
             log.warning("ask() failed for %s: %s", q.id, exc)
             continue
         latency = time.monotonic() - started
+        if bundles_out is not None:
+            bundles_out[q.id] = bundle
         checks = [
             CheckResult(name=name, passed=evaluate_check(name, bundle), gating=name in GATING_CHECKS)
             for name in q.checks
@@ -251,6 +332,146 @@ def check_answers(engine: QueryEngine, questions: list[Question]) -> list[Answer
             )
         )
     return results
+
+
+# --------------------------------------------------------------------------- #
+# WikiContradict 3-class scoring (research P1 #5) — Correct/Partial/Incorrect  #
+# --------------------------------------------------------------------------- #
+def _canon_pred(p: Optional[str]) -> str:
+    return (p or "").strip().lower()
+
+
+def score_contradiction(
+    golden: GoldenContradiction,
+    bundle: AnswerBundle,
+    subject_entity_id: Optional[int] = None,
+) -> ContradictionVerdict:
+    """Score how an answer handled a planted contradiction (research P1 #5):
+
+    * CORRECT   — a contradiction on the right SUBJECT+predicate is surfaced AND it
+                  references BOTH claim ids (neither side silently dropped).
+    * PARTIAL   — surfaced on the right subject+predicate but only one side carries a
+                  claim id (or both ids are the same → not two sides).
+    * INCORRECT — no matching contradiction is surfaced → silent merge.
+
+    The both-id assertion is the pre-impl-review C2 resolution: ``Contradiction`` already
+    carries ``claim_a_id``/``claim_b_id`` (ints), so "both ids present" = both non-null
+    AND distinct — no golden-slug→DB-id mapping and no contract change.
+
+    ``subject_entity_id`` (post-impl review): when the caller has resolved the golden
+    subject, a surfaced contradiction must ALSO be on that entity — otherwise a spurious
+    conflict on the WRONG subject but right predicate would over-credit. When ``None``
+    (no resolver / unresolved subject) the match falls back to predicate-only."""
+    want = _canon_pred(golden.predicate)
+    matches = [
+        c
+        for c in bundle.contradictions
+        if _canon_pred(c.predicate) == want
+        and (
+            subject_entity_id is None
+            or c.subject_entity_id is None
+            or c.subject_entity_id == subject_entity_id
+        )
+    ]
+    if not matches:
+        return ContradictionVerdict(
+            golden.id, ContradictionClass.incorrect, False,
+            "no contradiction surfaced on the subject+predicate (silent merge)",
+        )
+    both = any(
+        c.claim_a_id is not None and c.claim_b_id is not None and c.claim_a_id != c.claim_b_id
+        for c in matches
+    )
+    if both:
+        return ContradictionVerdict(golden.id, ContradictionClass.correct, True, "both claim ids present")
+    return ContradictionVerdict(
+        golden.id, ContradictionClass.partial, False,
+        "surfaced but only one side carries a distinct claim id",
+    )
+
+
+def score_contradictions(
+    golden: GoldenSet,
+    questions: list[Question],
+    bundles: dict[str, AnswerBundle],
+    repo: Optional[Repository] = None,
+) -> list[ContradictionVerdict]:
+    """Score every planted contradiction that a question references (``contradiction_ref``),
+    using that question's already-collected bundle. When ``repo`` is given, the golden
+    subject is resolved so the verdict is subject-aware (post-impl review)."""
+    verdicts: list[ContradictionVerdict] = []
+    by_id = {c.id: c for c in golden.contradictions}
+    fact_by_id = {f.id: f for f in golden.facts}
+    for q in questions:
+        ref = q.contradiction_ref
+        if not (ref and ref in by_id and q.id in bundles):
+            continue
+        gc = by_id[ref]
+        subject_eid: Optional[int] = None
+        if repo is not None:
+            # context from one side's source helps disambiguate a colliding subject name
+            side = fact_by_id.get(gc.claim_a or "") or fact_by_id.get(gc.claim_b or "")
+            ctx = {"source_uri": side.source_uri} if side else None
+            ent = repo.resolve_entity(gc.subject, context=ctx)
+            subject_eid = ent.id if ent is not None else None
+        verdicts.append(score_contradiction(gc, bundles[q.id], subject_entity_id=subject_eid))
+    return verdicts
+
+
+# --------------------------------------------------------------------------- #
+# Name-collision entity_id assertion (research P1 #7)                          #
+# --------------------------------------------------------------------------- #
+def check_entity_collisions(
+    repo: Repository, collisions: list[EntityCollision]
+) -> list[CollisionVerdict]:
+    """Each colliding name, resolved with its paired context, must resolve to a DISTINCT,
+    non-null ``entity_id`` — that is how the two Marias / two Tans stay separate."""
+    verdicts: list[CollisionVerdict] = []
+    for col in collisions:
+        if len(col.contexts) != len(col.names):
+            verdicts.append(CollisionVerdict(
+                col.id, False,
+                f"malformed probe: {len(col.contexts)} contexts != {len(col.names)} names",
+            ))
+            continue
+        ids: list[Optional[int]] = []
+        for name, ctx in zip(col.names, col.contexts):
+            ent = repo.resolve_entity(name, context=ctx)
+            ids.append(ent.id if ent is not None else None)
+        if any(i is None for i in ids):
+            unresolved = [n for n, i in zip(col.names, ids) if i is None]
+            verdicts.append(CollisionVerdict(col.id, False, f"unresolved: {unresolved}"))
+        elif len(set(ids)) != len(ids):
+            verdicts.append(CollisionVerdict(col.id, False, f"collapsed to shared entity_id(s): {ids}"))
+        else:
+            verdicts.append(CollisionVerdict(col.id, True, ""))
+    return verdicts
+
+
+# --------------------------------------------------------------------------- #
+# As-of Correctness (research P1 #6) — freshness, kept DISTINCT from contradiction
+# --------------------------------------------------------------------------- #
+def _is_freshness_question(q: Question) -> bool:
+    """A prefer-fresh-and-say-so question: it asserts ``uses_freshest_as_of`` and is NOT
+    a surface-both contradiction question (so freshness is scored apart from conflict)."""
+    return "uses_freshest_as_of" in q.checks and "surfaces_contradiction" not in q.checks
+
+
+def as_of_correctness(
+    questions: list[Question], answers: list[AnswerResult]
+) -> tuple[int, int]:
+    """``(passed, total)`` over the freshness questions only — the As-of Correctness
+    metric (research P1 #6), reported separately from the contradiction verdict."""
+    by_id = {a.question_id: a for a in answers}
+    passed = total = 0
+    for q in questions:
+        if not _is_freshness_question(q):
+            continue
+        total += 1
+        a = by_id.get(q.id)
+        if a and not a.error and any(c.name == "uses_freshest_as_of" and c.passed for c in a.checks):
+            passed += 1
+    return passed, total
 
 
 # --------------------------------------------------------------------------- #
@@ -316,14 +537,25 @@ def _build_repo() -> Repository:
     return PostgresRepository.from_url()
 
 
+@dataclass
+class EvalResult:
+    """Everything the harness computes in one run (so the rich report is one object)."""
+
+    extraction: ExtractionReport
+    answers: list[AnswerResult]
+    verdict: GoalVerdict
+    contradiction_verdicts: list[ContradictionVerdict] = field(default_factory=list)
+    collisions: list[CollisionVerdict] = field(default_factory=list)
+    as_of_passed: int = 0
+    as_of_total: int = 0
+
+
 # --------------------------------------------------------------------------- #
 # Reporting                                                                    #
 # --------------------------------------------------------------------------- #
-def render_report(
-    extraction: ExtractionReport,
-    answers: list[AnswerResult],
-    verdict: GoalVerdict,
-) -> str:
+def render_report(result: EvalResult) -> str:
+    extraction, answers, verdict = result.extraction, result.answers, result.verdict
+    lo, hi = extraction.recall_ci
     lines: list[str] = []
     lines.append("=" * 72)
     lines.append("HelixPay eval — two-level autotest (Agent 6, author-independent)")
@@ -332,9 +564,20 @@ def render_report(
     lines.append("LEVEL 1 — extraction check (golden recall over the raw data)")
     lines.append(
         f"  recall={extraction.recall:.0%} ({extraction.found}/{extraction.total})  "
+        f"95% Wilson CI [{lo:.0%}, {hi:.0%}]  "
         f"golden-precision={extraction.precision:.0%}  "
         f"[found={extraction.found} mismatch={extraction.mismatch} missing={extraction.missing}]"
     )
+    lines.append(
+        f"  macro recall (per-predicate mean)={extraction.macro_recall:.0%}  "
+        f"(n={extraction.total}; CI assumes i.i.d. — facts are clustered by source, "
+        "so the true SE is wider)"
+    )
+    # per-predicate breakdown, worst recall first — where a micro score hides a miss
+    per = extraction.per_predicate_recall
+    for pred, (found, total, rec) in sorted(per.items(), key=lambda kv: kv[1][2]):
+        flag = "  ⚠" if rec < 1.0 else ""
+        lines.append(f"      · {pred}: {found}/{total} = {rec:.0%}{flag}")
     for v in extraction.verdicts:
         mark = {"FOUND": "✓", "MISMATCH": "≠", "MISSING": "✗"}[v.verdict.value]
         suffix = f"  — {v.detail}" if v.detail else ""
@@ -349,6 +592,25 @@ def render_report(
         chk = " ".join(f"{c.name}{'✓' if c.passed else '✗'}" for c in a.checks)
         lines.append(f"    [{status}] {a.question_id}  ({a.latency_s*1000:.0f} ms)  {chk}")
     lines.append("")
+    if result.contradiction_verdicts:
+        lines.append("CONTRADICTION SCORING (WikiContradict 3-class; both-claim-id checked)")
+        for cv in result.contradiction_verdicts:
+            mark = {"CORRECT": "✓", "PARTIAL": "~", "INCORRECT": "✗"}[cv.verdict.value]
+            ids = "both-ids✓" if cv.both_ids_present else "both-ids✗"
+            lines.append(f"    {mark} {cv.contradiction_id}  [{cv.verdict.value}] {ids}  — {cv.detail}")
+        lines.append("")
+    if result.collisions:
+        lines.append("ENTITY COLLISIONS (name traps must resolve to distinct entity_ids)")
+        for col in result.collisions:
+            lines.append(f"    {'✓' if col.passed else '✗'} {col.collision_id}"
+                         + (f"  — {col.detail}" if col.detail else ""))
+        lines.append("")
+    if result.as_of_total:
+        lines.append(
+            f"AS-OF CORRECTNESS (freshness, distinct from contradiction): "
+            f"{result.as_of_passed}/{result.as_of_total}"
+        )
+        lines.append("")
     lines.append("/goal verdict")
     lines.append(
         f"  recall {extraction.recall:.0%} >= bar {verdict.recall_bar:.0%}: "
@@ -370,9 +632,10 @@ def run(
     golden_path: Path = DEFAULT_GOLDEN,
     questions_path: Path = DEFAULT_QUESTIONS,
     recall_bar: float = DEFAULT_RECALL_BAR,
-) -> tuple[ExtractionReport, list[AnswerResult], GoalVerdict]:
-    """Run both levels. ``repo``/``engine`` may be injected (tests / integration);
-    otherwise they are built from the environment lazily."""
+) -> EvalResult:
+    """Run both levels + the SP_013 rigor scores (3-class contradiction, entity
+    collisions, As-of Correctness). ``repo``/``engine`` may be injected (tests /
+    integration); otherwise they are built from the environment lazily."""
     golden = load_golden(golden_path)
     questions = load_questions(questions_path)
     if repo is None:
@@ -380,9 +643,21 @@ def run(
     if engine is None:
         engine = build_engine(repo)
     extraction = check_extraction(repo, golden)
-    answers = check_answers(engine, questions)
+    bundles: dict[str, AnswerBundle] = {}
+    answers = check_answers(engine, questions, bundles_out=bundles)
     verdict = goal_verdict(extraction, answers, recall_bar)
-    return extraction, answers, verdict
+    contradiction_verdicts = score_contradictions(golden, questions, bundles, repo=repo)
+    collisions = check_entity_collisions(repo, golden.entity_collisions)
+    as_of_passed, as_of_total = as_of_correctness(questions, answers)
+    return EvalResult(
+        extraction=extraction,
+        answers=answers,
+        verdict=verdict,
+        contradiction_verdicts=contradiction_verdicts,
+        collisions=collisions,
+        as_of_passed=as_of_passed,
+        as_of_total=as_of_total,
+    )
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -397,7 +672,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         log.error("DATABASE_URL unset — the eval needs a migrated+ingested DB. (exit 2)")
         return 2
     try:
-        extraction, answers, verdict = run(
+        result = run(
             golden_path=Path(args.golden),
             questions_path=Path(args.questions),
             recall_bar=args.recall_bar,
@@ -405,8 +680,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     except RuntimeError as exc:
         log.error("could not run eval: %s", exc)
         return 2
-    print(render_report(extraction, answers, verdict))
-    return 0 if verdict.passed else 1
+    print(render_report(result))
+    return 0 if result.verdict.passed else 1
 
 
 if __name__ == "__main__":  # pragma: no cover
