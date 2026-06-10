@@ -1,8 +1,42 @@
 # SP_019 — Extraction attribution: run finding & evidence
 
 **Sprint:** SP_019 (extraction attribution) · **Branch:** `sprint/SP_019-extraction-attribution`
-**Status:** deterministic layers implemented + proven at $0; recall lift to ≥80% is the gated re-record.
+**Status:** all three layers implemented; operator-approved paid re-record RAN 2026-06-10.
 **DB referenced by name only:** `helixpay_smoke` (never a DATABASE_URL / DSN — CLAUDE.md §7).
+
+## MEASURED RESULT (operator-approved re-record, 2026-06-10)
+
+Reset the smoke DB derived rows (kept chunks+embeddings+seeded roster), re-recorded all 9 docs
+with the SP_019 prompt through the new pipeline (Sonnet extract + Voyage embed, no Opus — a few
+cents), then graded with `python -m eval.run --golden facts.yaml`:
+
+**Golden recall: 4/11 → 7/11 (36% → 64%), golden-precision 100%, found=7 mismatch=0 missing=4.**
+
+The three facts SP_019 targeted are now **FOUND**:
+- ✓ `html-dashboard-revenue` — subject fixed (`metric|Q1 2026 Revenue` → `HelixPay`) **and**
+  as_of corrected to the Q1 end (`2026-03-31`, not the dashboard's "As of 2026-04-21").
+- ✓ `html-dashboard-nps` — same.
+- ✓ `interview-brasil-revenue` — regional attribution worked; **not** falsely merged into the
+  company (mismatch=0; Level-2 `q-dashboards-vs-boarddeck` passes `no_false_contradiction✓`).
+
+The 4 still **MISSING** are exactly the SP_010 hand-off items (alias / vocab / resolution /
+shape — NOT attribution):
+- ✗ `pdf-boarddeck-confluence-q3` — no clean `(Project Confluence, ga_target)` claim (shape).
+- ✗ `slack-crm-cutover-june` — no `(CRM migration, completion_target)` claim (surface form).
+- ✗ `email-acai-owner` — endpoint `Açaí Express SP` unresolved (entity alias).
+- ✗ `code-core-top-contributor` — no `(helixpay/core, top_contributor)` (predicate vocab:
+  the extractor emits `primary owner`).
+
+**Bottom line:** the re-record confirmed the thesis — the metric-attribution + dashboard-as_of
+defects are fixed (3/3 target facts now FOUND, zero false attributions), lifting recall to 64%.
+The remaining 28% to clear the 80% bar is **SP_010 territory** (roster aliases + predicate
+vocab), not extraction attribution. (Note: running the full `eval.run` also fired the Level-2
+`ask()` checks on Opus — a few extra cents beyond the approved record; use `check_extraction`
+alone for a $0 recall-only re-measure.)
+
+---
+
+## Original plan & evidence (pre-run)
 
 ## What shipped (deterministic, $0, test-proven)
 
