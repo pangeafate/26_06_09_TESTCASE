@@ -23,6 +23,12 @@ jobs:
           if [ -f requirements.txt ]; then
             python -m pip install --upgrade pip
             python -m pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            # This project declares deps in pyproject ([project] + the `dev` extra:
+            # pytest/mypy). Without this the gateway's python-tests step dies on
+            # `No module named pytest`. Editable install so the gateway runs against the tree.
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[dev]"
           fi
 
       - name: Install Node dependencies if declared
