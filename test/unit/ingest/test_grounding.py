@@ -125,3 +125,18 @@ def test_locate_span_ambiguous_repeated_whitespace_span_returns_none():
     chunk = "reports to  Daniel; later, reports to   Daniel again"
     evidence = "reports to daniel"
     assert locate_span(evidence, chunk) is None
+
+
+def test_locate_span_ambiguous_exact_repeat_returns_none():
+    # H-1: the SAME verbatim string appears twice (e.g. one figure in two table rows). The
+    # exact-match path must not silently anchor to the first occurrence — that would
+    # misdirect SP_012 highlight-to-verify. Ambiguous exact match → None.
+    chunk = "Row A: SGD 14.2M.  Row B: SGD 14.2M."
+    assert locate_span("SGD 14.2M", chunk) is None
+
+
+def test_locate_span_unique_exact_still_returns_offsets():
+    # a single verbatim occurrence still resolves to real offsets (the common case)
+    chunk = "Q1 closed at SGD 14.2M against a 16M plan."
+    span = locate_span("SGD 14.2M", chunk)
+    assert span is not None and chunk[span[0]:span[1]] == "SGD 14.2M"

@@ -363,3 +363,17 @@ def test_link_conflict_skips_unpersisted_edge(caplog):
     with caplog.at_level(logging.WARNING, logger="helixpay.ingest.contradict"):
         assert detect_link_conflicts(repo, 5, "reports_to") == 0
     assert any("skip" in r.message.lower() for r in caplog.records)
+
+
+def test_link_conflict_zero_edges_is_noop():
+    # no edges for the group → nothing to compare, no contradiction, no crash
+    repo = FakeLinkRepo([])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert repo.contradictions == []
+
+
+def test_link_conflict_single_edge_is_noop():
+    # one manager is the normal case — a single reports_to edge never self-conflicts
+    repo = FakeLinkRepo([_link(1, 5, 10)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert repo.contradictions == []
