@@ -12,6 +12,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the doc-freshness/sprint validators resolve the active
+          # sprint and diff-base from git history (need HEAD^ and prior commits).
+          # A shallow (depth-1) clone makes resolve_diff_base fall back to the
+          # empty-tree base, mis-scoping every meta-doc into range → false F-4
+          # "bumped backwards" failures. fetch-depth: 0 makes CI match local.
+          fetch-depth: 0
 
       # --- uv path: the project declares deps in pyproject.toml (this repo). uv
       #     creates the venv and installs the project + the `dev` extra (pytest, mypy)

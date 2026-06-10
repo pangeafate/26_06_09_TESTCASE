@@ -107,6 +107,10 @@ doc_reality:
     - helixpay/cli.py
     - db/schema.sql        # spec shorthand for helixpay/db/schema.sql
     - smoke-test/          # bootstrap sample task (TASK_000); not part of HelixPay
+    - DEV_RULES/           # vendored governance bundle, gitignored (.gitignore:29) — present on
+                           # disk locally but never in a clean checkout/CI, so PROGRESS.md's
+                           # `DEV_RULES/DEV_REINFORCE.md` ref is not a dead path. (exclude_dirs
+                           # already skips scanning *inside* it; this skips refs *to* it.)
   dead_path_glob_exclusions:
     - "src/*"
     - "test/unit/*"
@@ -123,6 +127,7 @@ doc_reality:
     - "api/*"
     - "deploy/*"
     - "smoke-test/*"
+    - "DEV_RULES/*"        # gitignored governance bundle (see dead_path_exclusions above)
   frontmatter_required:
     - PROGRESS.md
   duplication_threshold: 30
