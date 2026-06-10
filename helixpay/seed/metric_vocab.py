@@ -14,18 +14,115 @@ from __future__ import annotations
 
 # (canonical_key, display_name, aliases)
 METRIC_VOCAB: list[tuple[str, str, list[str]]] = [
-    ("revenue", "Revenue", ["revenue", "total revenue", "q1 revenue", "topline", "sales", "turnover", "net revenue"]),
-    ("arr", "Annual Recurring Revenue", ["arr", "annual recurring revenue", "recurring revenue", "annualized recurring revenue"]),
+    (
+        "revenue",
+        "Revenue",
+        [
+            "revenue",
+            "total revenue",
+            "q1 revenue",
+            "topline",
+            "sales",
+            "turnover",
+            "net revenue",
+        ],
+    ),
+    (
+        "arr",
+        "Annual Recurring Revenue",
+        [
+            "arr",
+            "annual recurring revenue",
+            "recurring revenue",
+            "annualized recurring revenue",
+        ],
+    ),
     ("ebitda", "EBITDA", ["ebitda", "operating profit"]),
-    ("monthly_burn", "Monthly Burn", ["burn", "monthly burn", "burn rate", "cash burn"]),
+    (
+        "monthly_burn",
+        "Monthly Burn",
+        ["burn", "monthly burn", "burn rate", "cash burn"],
+    ),
     ("runway", "Runway", ["runway", "cash runway", "months of runway"]),
     ("nps", "Net Promoter Score", ["nps", "net promoter score", "aggregate nps"]),
-    ("churn", "Churn", ["churn", "arr churn", "churned arr", "logo churn", "attrition", "revenue churn"]),
-    ("net_new_merchants", "Net New Merchants", ["net new merchants", "new merchants", "net new logos"]),
-    ("total_paid_merchants", "Total Paid Merchants", ["total paid merchants", "paid merchants", "active merchants", "merchant count"]),
-    ("headcount", "Headcount", ["headcount", "head count", "total employees", "team size", "fte", "staff"]),
-    ("revenue_target", "Revenue Target", ["revenue target", "plan", "revenue plan", "target revenue"]),
+    (
+        "churn",
+        "Churn",
+        [
+            "churn",
+            "arr churn",
+            "churned arr",
+            "logo churn",
+            "attrition",
+            "revenue churn",
+        ],
+    ),
+    (
+        "net_new_merchants",
+        "Net New Merchants",
+        ["net new merchants", "new merchants", "net new logos"],
+    ),
+    (
+        "total_paid_merchants",
+        "Total Paid Merchants",
+        [
+            "total paid merchants",
+            "paid merchants",
+            "active merchants",
+            "merchant count",
+        ],
+    ),
+    (
+        "headcount",
+        "Headcount",
+        ["headcount", "head count", "total employees", "team size", "fte", "staff"],
+    ),
+    (
+        "revenue_target",
+        "Revenue Target",
+        ["revenue target", "plan", "revenue plan", "target revenue"],
+    ),
     ("gross_margin", "Gross Margin", ["gross margin", "gm"]),
+    # SP_010: milestone/deadline predicates (not numeric metrics). Their value is a
+    # forward target date and their as_of is the assertion date — canonicalizing the
+    # GA/launch synonyms together is what lets the planted Confluence contradiction pair.
+    (
+        "ga_target",
+        "GA Target",
+        [
+            "ga_target",
+            "ga",
+            "ga target",
+            "ga date",
+            "general availability",
+            "general availability target",
+            "launch",
+            "launch date",
+            "launch target",
+            "ga launch",
+            "go-live",
+            "go live",
+            "go live date",
+            "release date",
+            "target launch date",
+            "platform launch",
+        ],
+    ),
+    (
+        "completion_target",
+        "Completion Target",
+        [
+            "completion_target",
+            "completion",
+            "completion date",
+            "target completion",
+            "cutover",
+            "cutover date",
+            "migration completion",
+            "migration target",
+            "migration cutover",
+        ],
+    ),
 ]
 
 # alias (lowercased) -> canonical_key

@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-09
+last-reconciled: 2026-06-10
 authoritative-for: [features]
 ---
 
@@ -34,3 +34,13 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned (owning agent in pare
 | Exposure: MCP (streamable-HTTP) + FastAPI + CLI | ⬜ | Agent 4 |
 | Infra/deploy: Docker, compose, Makefile, vhost | ⬜ | Agent 5 |
 | Eval + golden ground truth + adversarial verify | ⬜ | Agent 6 |
+
+## Round 2 — post-gate hardening (recall + replay)
+
+| Feature | Status | Source |
+|---------|--------|--------|
+| `$0` replay tier: record/replay extractor wrappers + `make ingest-record`/`replay` (`replay-tier`) | 🚧 | `helixpay/ingest/replay.py`, `Makefile` (SP_010) |
+| Company entity resolution: seed `HelixPay` distinct from `HelixPay Brasil` (`recall-company-entity`) | 🚧 | `helixpay/seed/roster.py` (SP_010) |
+| Project entities (`Project Confluence`, `CRM migration`) + `ga_target`/`completion_target` vocab (`recall-metric-vocab`) | 🚧 | `helixpay/seed/roster.py`, `metric_vocab.py` (SP_010) |
+| Shared value normalization wired into contradiction detection (`recall-normalize`) | 🚧 | `helixpay/ingest/contradict.py` → `normalize.py` (SP_010) |
+| Target-predicate temporal-slip contradiction — Confluence GA (`recall-target-contradiction`) | 🚧 | `helixpay/ingest/contradict.py` (SP_010) |

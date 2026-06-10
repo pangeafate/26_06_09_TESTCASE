@@ -67,7 +67,9 @@ class Repository(Protocol):
     def add_claim(self, c: Claim) -> int:
         """Insert a claim. Insert-only and idempotent on its natural key
         (subject, predicate, object_value, source_chunk_id); supersession is a
-        separate operation (``supersede_claim``)."""
+        separate operation (``supersede_claim``). Provenance-v2 fields
+        (``evidence``/``char_start``/``char_end``) are persisted but are NOT part of
+        the natural key, so a re-extraction of the same fact keeps the first span."""
         ...
 
     def supersede_claim(self, old_id: int, new_id: int, valid_to: date) -> None:
@@ -97,7 +99,14 @@ class Repository(Protocol):
     def get_claims(self, subject_id: int, predicate: Optional[str] = None) -> list[Claim]:
         ...
 
-    def get_links(self, link_type: Optional[str] = None) -> list[Link]:
+    def get_links(
+        self,
+        link_type: Optional[str] = None,
+        from_entity_id: Optional[int] = None,
+    ) -> list[Link]:
+        """All links, optionally filtered by ``link_type`` and/or ``from_entity_id``.
+        ``from_entity_id`` was appended (SP_009) so the new parameter is keyword- and
+        positionally-backward-compatible: ``get_links("reports_to")`` is unchanged."""
         ...
 
     def get_org_subtree(self, root_id: Optional[int] = None, as_of: Optional[date] = None) -> OrgNode:
@@ -109,6 +118,24 @@ class Repository(Protocol):
         ...
 
     def get_sources(self, claim_ids: list[int]) -> list[Citation]:
+        ...
+
+    # -- provenance v2 (SP_009) -------------------------------------------- #
+    def get_link_sources(self, link_ids: list[int]) -> list[Citation]:
+        """Provenance for relationship (link) rows. Each returned ``Citation`` is
+        anchored by ``link_id``; ``snippet`` is the link's source-chunk text prefix
+        (links carry no evidence span). Links with no resolvable source are omitted."""
+        ...
+
+    def get_chunk_sources(self, chunk_ids: list[int]) -> list[Citation]:
+        """Provenance for retrieved chunks (closes the query chunk-citation hole). One
+        ``Citation`` per chunk, anchored by ``chunk_id`` with the chunk-text prefix as
+        ``snippet`` — no claim join, so ``claim_id`` is always ``None``."""
+        ...
+
+    def known_content_hashes(self) -> set[str]:
+        """Every ``documents.content_hash`` already stored. Lets ingestion skip
+        re-embedding unchanged sources (compute-idempotency: re-ingest → near-free)."""
         ...
 
 

@@ -1,0 +1,17 @@
+# HelixPay — Caddy vhost. Add to the existing Caddyfile (or `import` this file).
+# Caddy provisions and renews TLS automatically.
+#
+# Replace `helixpay.example.com` with the real subdomain that DNS points at the
+# droplet 138.197.187.49. If no subdomain is wired yet, the address
+#   helixpay.138.197.187.49.sslip.io
+# resolves to the droplet with zero DNS setup and Caddy will still issue a valid
+# certificate for it — handy for a first live URL.
+
+helixpay.example.com {
+	# The app listens only on the loopback; Caddy is the public TLS front door.
+	# streamable-HTTP / SSE works through reverse_proxy with no extra config.
+	reverse_proxy 127.0.0.1:8000
+}
+
+# The MCP server is served by the same app under /mcp, so an agent connects at
+# https://helixpay.example.com/mcp (streamable-HTTP) automatically.

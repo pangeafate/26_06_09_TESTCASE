@@ -117,6 +117,14 @@ class Claim(BaseModel):
     superseded_by: Optional[int] = None
     source_chunk_id: Optional[int] = None
     document_id: Optional[int] = None
+    # Provenance v2 (SP_009): the verbatim grounding span the model cited and its
+    # offsets into the source chunk text (``chunks.text``), span ``[char_start, char_end)``.
+    # Additive + nullable: an old payload without them validates and degrades to today's
+    # behavior. They are NOT part of the natural key, so a re-extraction of the same fact
+    # with a different span dedupes to the first write (first-write-wins).
+    evidence: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
 
 
 class Link(BaseModel):
@@ -130,10 +138,18 @@ class Link(BaseModel):
     valid_to: Optional[date] = None
     confidence: Optional[float] = None
     source_chunk_id: Optional[int] = None
+    # Provenance v2 (SP_009): mirror Claim so relationship provenance is a direct join
+    # (not claims-only). Additive + nullable; first-write-wins on re-ingest.
+    document_id: Optional[int] = None
 
 
 class Contradiction(BaseModel):
-    """A first-class object: two claims that disagree, surfaced never hidden."""
+    """A first-class object: two disagreeing facts, surfaced never hidden.
+
+    A contradiction pairs two *claims* (value conflicts) or, since SP_009, two *links*
+    (graph/relationship conflicts, e.g. two sources asserting different managers). Exactly
+    one pair kind is populated per row; the unused pair stays ``None``.
+    """
 
     id: Optional[int] = None
     subject_entity_id: Optional[int] = None
@@ -143,16 +159,25 @@ class Contradiction(BaseModel):
     kind: Optional[str] = None  # one of ContradictionKind
     note: Optional[str] = None
     detected_at: Optional[datetime] = None
+    # Provenance v2 (SP_009): link-pair conflicts make graph contradictions first-class.
+    link_a_id: Optional[int] = None
+    link_b_id: Optional[int] = None
 
 
 class Citation(BaseModel):
-    """Provenance attached to an answer. ``as_of`` is what makes staleness visible."""
+    """Provenance attached to an answer. ``as_of`` is what makes staleness visible.
+
+    A citation anchors back to whatever it grounds: a ``claim_id`` (value provenance),
+    a ``chunk_id`` (retrieval provenance), or — since SP_009 — a ``link_id`` (relationship
+    provenance, returned by ``get_link_sources``). All anchors are nullable and additive.
+    """
 
     source_uri: str
     as_of: Optional[date] = None
     snippet: Optional[str] = None
     claim_id: Optional[int] = None
     chunk_id: Optional[int] = None
+    link_id: Optional[int] = None
 
 
 class AnswerBundle(BaseModel):

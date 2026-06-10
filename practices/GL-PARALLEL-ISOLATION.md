@@ -181,9 +181,41 @@ pre-applied to those role files.
 | WI-3 | two non-isolated sprints overlap on paths, ≥1 strict tier | FAIL |
 | WI-3 | two non-isolated **Micro** sprints overlap on paths | WARN |
 | WI-3 | a strict-tier non-isolated sprint runs alongside other active code work | WARN |
+| WI-4 | a `.claude/worktrees/` directory maps to no active In-Progress sprint | WARN |
 
 Solo sprints, properly isolated parallel sprints, and plans with no `isolation`
 field all pass.
+
+## Lessons from the first six-agent fan-out (DEV_REINFORCE)
+
+The SP_002–SP_007 build was the first real parallel fan-out. Isolation held —
+the failures clustered at the **seams isolation hands off to integration**, not
+inside it. The full retrospective is `DEV_RULES/DEV_REINFORCE.md`; the parts that
+bind parallel work:
+
+- **Pre-create shared package roots at the gate (F-1).** When two agents own
+  sibling subpackages under a common package, the parent `__init__.py` belongs
+  to neither brief, so both create it and it collides at merge. The gate must
+  commit those roots **before** fan-out so agents add to an existing file rather
+  than race to create one. Use `scripts/scaffold-package-roots.py <root> <pkg> …`
+  with every package directory more than one agent writes under. When two agents
+  genuinely must share a package directory, the brief also names which one owns
+  the parent `__init__.py`.
+
+- **Prune orphan worktrees (F-6).** A worktree left behind by a finished or
+  abandoned sprint pollutes the live-worktree signal. WI-4 WARNs on any
+  `.claude/worktrees/` directory that maps to no active sprint; remove it with
+  `git worktree remove` as a close-out step. Name every worktree for its sprint
+  (`.claude/worktrees/SP_XXX`) so the mapping is unambiguous.
+
+- **One reproducible per-worktree environment (F-4).** Each worktree bootstrapped
+  its own venv, they diverged (one lacked `pytest`), and `uv run` silently fell
+  back to a system Python without the package — a *false* RED on the critical
+  path. Pin the interpreter (`.python-version`), provision every worktree from
+  one lock, run tests only via `uv run` against the synced env, and smoke-check
+  `python -c "import <pkg>, pytest"` in the worktree's own interpreter before
+  trusting a green suite. An import error is an environment fault, never a test
+  failure.
 
 ---
 

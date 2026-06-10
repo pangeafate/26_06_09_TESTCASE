@@ -76,6 +76,16 @@ doc_reality:
     - build
     - data          # the HelixPay dataset — input content, not authored project docs
     - DEV_RULES      # vendored governance bundle (gitignored); operative copies live at root
+    - .claude        # isolated agent worktrees live under .claude/worktrees/ — their docs
+                     # reference paths real on their own branch but not yet on main; scanning
+                     # them as if they were main's docs is the worktree-pollution failure
+                     # DEV_REINFORCE F-6 warns about. Exclude the whole agent-private tree.
+    - fanout         # Phase-1 build briefs — planning scaffolding that deliberately references
+                     # the build agents' planned deliverables (ingest/pipeline.py, the per-agent
+                     # sprint plans, test/golden/) before they merge to main. Same rationale as
+                     # the dead_path_exclusions below; the whole dir is future-state planning.
+    - research       # external reference material (extraction design notes, GraphRAG citations);
+                     # cites example/third-party paths, not authored project reality.
   dead_path_exclusions:
     - test/unit/
     - test/integration/
@@ -97,6 +107,10 @@ doc_reality:
     - helixpay/cli.py
     - db/schema.sql        # spec shorthand for helixpay/db/schema.sql
     - smoke-test/          # bootstrap sample task (TASK_000); not part of HelixPay
+    - DEV_RULES/           # vendored governance bundle, gitignored (.gitignore:29) — present on
+                           # disk locally but never in a clean checkout/CI, so PROGRESS.md's
+                           # `DEV_RULES/DEV_REINFORCE.md` ref is not a dead path. (exclude_dirs
+                           # already skips scanning *inside* it; this skips refs *to* it.)
   dead_path_glob_exclusions:
     - "src/*"
     - "test/unit/*"
@@ -113,6 +127,7 @@ doc_reality:
     - "api/*"
     - "deploy/*"
     - "smoke-test/*"
+    - "DEV_RULES/*"        # gitignored governance bundle (see dead_path_exclusions above)
   frontmatter_required:
     - PROGRESS.md
   duplication_threshold: 30

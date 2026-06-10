@@ -4,9 +4,21 @@ version = "0.1.0"
 description = "HelixPay Ontology — temporal, provenance-carrying ontology over a messy company-data dump, queryable by an AI agent with citations."
 requires-python = ">=3.12"
 dependencies = [
+    # Phase-0 substrate (SP_001 gate)
     "psycopg[binary,pool]>=3.2",
     "pydantic>=2.7",
     "pyyaml>=6.0",
+    # Ingest loaders (SP_002): HTML + PDF extraction
+    "beautifulsoup4>=4.12",
+    "pdfplumber>=0.11",
+    # LLM + embedding SDKs (SP_003 extraction, SP_004 synthesis) — imported lazily,
+    # but declared so the container/image has them at runtime
+    "anthropic>=0.40",
+    "voyageai>=0.3",
+    # Exposure layer (SP_005): REST + streamable-HTTP MCP, served by uvicorn
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "mcp>=1.2",
 ]
 
 [project.optional-dependencies]
@@ -14,6 +26,10 @@ dev = [
     "pytest>=8.0",
     "mypy>=1.10",
 ]
+
+# Console entrypoint: `helixpay ingest ./data` (Makefile `ingest`, deploy.sh).
+[project.scripts]
+helixpay = "helixpay.cli:main"
 
 [build-system]
 requires = ["hatchling"]

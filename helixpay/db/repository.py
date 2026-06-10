@@ -69,6 +69,17 @@ def _chunk_from_row(row: dict[str, Any]) -> Chunk:
     return Chunk(id=row["id"], document_id=row.get("document_id"), ordinal=row.get("ordinal", 0), text=row["text"])
 
 
+_SNIPPET_MAX = 200
+
+
+def _truncate_snippet(snippet: Optional[str]) -> Optional[str]:
+    """Clip a citation snippet to a fixed length with an ellipsis (shared by every
+    *_sources read so the truncation rule lives in one place)."""
+    if snippet and len(snippet) > _SNIPPET_MAX:
+        return snippet[:_SNIPPET_MAX] + "…"
+    return snippet
+
+
 class PostgresRepository:
     """Concrete Repository (satisfies helixpay.contracts.Repository)."""
 
@@ -232,17 +243,22 @@ class PostgresRepository:
     def add_claim(self, c: Claim) -> int:
         with self.conn.cursor() as cur:
             cur.execute(
+                # Provenance-v2 columns (evidence/char_start/char_end) are appended to the
+                # INSERT but are NOT in the ON CONFLICT target: the natural key is unchanged,
+                # so a re-extraction of the same fact dedupes and keeps the first span.
                 """
                 INSERT INTO claims
                     (subject_entity_id, predicate, object_value, object_entity_id, as_of,
-                     confidence, valid_from, valid_to, superseded_by, source_chunk_id, document_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     confidence, valid_from, valid_to, superseded_by, source_chunk_id, document_id,
+                     evidence, char_start, char_end)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (COALESCE(subject_entity_id, -1), predicate, COALESCE(object_value, ''), COALESCE(source_chunk_id, -1))
                 DO NOTHING
                 RETURNING id
                 """,
                 (c.subject_entity_id, c.predicate, c.object_value, c.object_entity_id, c.as_of,
-                 c.confidence, c.valid_from, c.valid_to, c.superseded_by, c.source_chunk_id, c.document_id),
+                 c.confidence, c.valid_from, c.valid_to, c.superseded_by, c.source_chunk_id, c.document_id,
+                 c.evidence, c.char_start, c.char_end),
             )
             row = cur.fetchone()
             if row is None:  # natural-key duplicate — return the existing id
@@ -272,28 +288,41 @@ class PostgresRepository:
     def add_link(self, link: Link) -> None:
         with self.conn.cursor() as cur:
             cur.execute(
+                # document_id is appended to the INSERT but stays out of the natural key
+                # (the ON CONFLICT target is byte-identical to links_natural_key), so
+                # re-ingesting the same edge dedupes and keeps the first document_id.
                 """
-                INSERT INTO links (from_entity_id, to_entity_id, link_type, as_of, valid_to, confidence, source_chunk_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                INSERT INTO links (from_entity_id, to_entity_id, link_type, as_of, valid_to, confidence, source_chunk_id, document_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (from_entity_id, to_entity_id, link_type, COALESCE(as_of, '0001-01-01')) DO NOTHING
                 """,
-                (link.from_entity_id, link.to_entity_id, link.link_type, link.as_of, link.valid_to, link.confidence, link.source_chunk_id),
+                (link.from_entity_id, link.to_entity_id, link.link_type, link.as_of, link.valid_to, link.confidence, link.source_chunk_id, link.document_id),
             )
             self.conn.commit()
 
     def add_contradiction(self, c: Contradiction) -> None:
-        # Normalize the pair so (a,b) and (b,a) dedupe to one row (review HIGH-4).
+        # Normalize each pair so (a,b) and (b,a) dedupe to one row (review HIGH-4). The
+        # claim pair dedupes via the table UNIQUE(claim_a_id, claim_b_id); the link pair
+        # (SP_009) via the partial unique index contradictions_link_pair — both rely on
+        # the inserted ids being order-normalized here.
         a, b = c.claim_a_id, c.claim_b_id
         if a is not None and b is not None and a > b:
             a, b = b, a
+        la, lb = c.link_a_id, c.link_b_id
+        if la is not None and lb is not None and la > lb:
+            la, lb = lb, la
         with self.conn.cursor() as cur:
             cur.execute(
+                # Bare ON CONFLICT DO NOTHING (no target) so a conflict on EITHER unique
+                # constraint is an idempotent no-op: the claim-pair UNIQUE(claim_a_id,
+                # claim_b_id) and the link-pair partial index contradictions_link_pair.
+                # Naming only the claim columns would let a duplicate link pair raise.
                 """
-                INSERT INTO contradictions (subject_entity_id, predicate, claim_a_id, claim_b_id, kind, note)
-                VALUES (%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (claim_a_id, claim_b_id) DO NOTHING
+                INSERT INTO contradictions (subject_entity_id, predicate, claim_a_id, claim_b_id, kind, note, link_a_id, link_b_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT DO NOTHING
                 """,
-                (c.subject_entity_id, c.predicate, a, b, c.kind, c.note),
+                (c.subject_entity_id, c.predicate, a, b, c.kind, c.note, la, lb),
             )
             self.conn.commit()
 
@@ -372,12 +401,22 @@ class PostgresRepository:
             cur.execute(sql, params)
             return [_claim_from_row(r) for r in cur.fetchall()]
 
-    def get_links(self, link_type: Optional[str] = None) -> list[Link]:
-        sql = "SELECT * FROM links"
+    def get_links(
+        self,
+        link_type: Optional[str] = None,
+        from_entity_id: Optional[int] = None,
+    ) -> list[Link]:
+        clauses: list[str] = []
         params: list[Any] = []
         if link_type:
-            sql += " WHERE link_type = %s"
+            clauses.append("link_type = %s")
             params.append(link_type)
+        if from_entity_id is not None:
+            clauses.append("from_entity_id = %s")
+            params.append(from_entity_id)
+        sql = "SELECT * FROM links"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY id ASC"
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -496,19 +535,88 @@ class PostgresRepository:
             )
             out: list[Citation] = []
             for r in cur.fetchall():
-                snippet = r.get("snippet")
-                if snippet and len(snippet) > 200:
-                    snippet = snippet[:200] + "…"
                 out.append(
                     Citation(
                         source_uri=r.get("source_uri") or "",
                         as_of=r.get("as_of"),
-                        snippet=snippet,
+                        snippet=_truncate_snippet(r.get("snippet")),
                         claim_id=r.get("claim_id"),
                         chunk_id=r.get("chunk_id"),
                     )
                 )
             return out
+
+    # ------------------------------------------------------------------ #
+    # provenance v2 (SP_009)
+    # ------------------------------------------------------------------ #
+    def get_link_sources(self, link_ids: list[int]) -> list[Citation]:
+        """Provenance for link rows, each anchored by ``link_id``. ``snippet`` is the
+        source-chunk text prefix (links carry no evidence span); ``as_of`` prefers the
+        link's own date, else the document's. Links with no resolvable source are omitted."""
+        if not link_ids:
+            return []
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT l.id AS link_id,
+                       d.source_uri AS source_uri,
+                       COALESCE(l.as_of, d.as_of) AS as_of,
+                       ch.text AS snippet,
+                       l.source_chunk_id AS chunk_id
+                FROM links l
+                LEFT JOIN chunks ch ON ch.id = l.source_chunk_id
+                LEFT JOIN documents d ON d.id = COALESCE(l.document_id, ch.document_id)
+                WHERE l.id = ANY(%s) AND d.id IS NOT NULL
+                ORDER BY l.id ASC
+                """,
+                (link_ids,),
+            )
+            return [
+                Citation(
+                    source_uri=r.get("source_uri") or "",
+                    as_of=r.get("as_of"),
+                    snippet=_truncate_snippet(r.get("snippet")),
+                    chunk_id=r.get("chunk_id"),
+                    link_id=r.get("link_id"),
+                )
+                for r in cur.fetchall()
+            ]
+
+    def get_chunk_sources(self, chunk_ids: list[int]) -> list[Citation]:
+        """One ``Citation`` per chunk (anchored by ``chunk_id``), the chunk-text prefix as
+        ``snippet``. No claim join — ``claim_id`` is always ``None``. Chunks whose document
+        is missing are omitted."""
+        if not chunk_ids:
+            return []
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ch.id AS chunk_id,
+                       d.source_uri AS source_uri,
+                       d.as_of AS as_of,
+                       ch.text AS snippet
+                FROM chunks ch
+                LEFT JOIN documents d ON d.id = ch.document_id
+                WHERE ch.id = ANY(%s) AND d.id IS NOT NULL
+                ORDER BY ch.id ASC
+                """,
+                (chunk_ids,),
+            )
+            return [
+                Citation(
+                    source_uri=r.get("source_uri") or "",
+                    as_of=r.get("as_of"),
+                    snippet=_truncate_snippet(r.get("snippet")),
+                    chunk_id=r.get("chunk_id"),
+                )
+                for r in cur.fetchall()
+            ]
+
+    def known_content_hashes(self) -> set[str]:
+        """Every ``documents.content_hash`` already stored (compute-idempotency)."""
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT content_hash FROM documents")
+            return {r["content_hash"] for r in cur.fetchall()}
 
 
 __all__ = ["PostgresRepository"]

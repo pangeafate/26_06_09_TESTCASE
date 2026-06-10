@@ -9,10 +9,23 @@ isolation: shared-tree
 branch: ""
 worktree: ""
 agent_owner: ""
+dependencies: []
+dev_dependencies: []
 ---
 <!-- Template: fill in the frontmatter (sprint_id, features, user_stories,
      schema_touched, structure_touched, status) and the sections below.
      Replace values in the frontmatter when you copy this template.
+
+     DEPENDENCIES (validate_declared_deps.py + scripts/consolidate-deps.py —
+     DEV_REINFORCE F-2). Do NOT edit pyproject.toml mid-sprint (parallel agents
+     appending to one [project.dependencies] block conflict on every merge).
+     Instead declare the third-party packages this sprint adds here, as inline
+     lists; the orchestrator unions them into pyproject.toml at integration via
+     `scripts/consolidate-deps.py`:
+       dependencies:     runtime packages, e.g. [anthropic>=0.40, voyageai>=0.3]
+       dev_dependencies: dev/test-only packages, e.g. [pytest>=8, ruff]
+     A code-owning sprint must declare `dependencies` (use `[]` for none) — the
+     failure mode F-2 prevents is *silence*, not emptiness.
 
      Sprint plans carry frontmatter for validate_doc_freshness.py Stage F-1.
      workspace/sprints/ is EXCLUDED from validate_doc_reality.py Stage C's
