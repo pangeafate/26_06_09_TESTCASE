@@ -201,6 +201,22 @@ In: `eval/**`, `test/golden/**`, and the `helixpay ingest` CLI entrypoint. Out: 
   render in `eval.run` output; zero-extractor-call re-ingest is proven by the pipeline unit
   test `test_already_ingested_skips_embed_and_extract` (extractor calls == 0) plus the new
   CLI wiring test. Live recall on the SP_010 replay DB is the certification step (hand-off).
+- **Iteration 3** — follow-up adversarial review of the contradiction scorer; 2 HIGH +
+  3 MEDIUM, all resolved + tested (`uv run pytest test` → 332 passed, 33 skipped; mypy clean):
+  - *H1 — over-credit on unannotated rows.* A surfaced contradiction with
+    `subject_entity_id=None` was scored CORRECT even when the golden subject WAS resolved,
+    so an engine that never annotates subjects inflated the score. **Fixed:** the subject
+    and both-id axes are split — only a *subject-confirmed* row (or no resolved golden
+    subject) earns CORRECT; an unannotated row caps at PARTIAL. New test.
+  - *H2 — throwing model scored cleaner than a wrong one.* If `ask()` raised on a
+    `contradiction_ref` question, the contradiction was silently skipped, not scored.
+    **Fixed:** `score_contradictions` emits INCORRECT when the question has no bundle. New test.
+  - *MEDIUM — dangling contradiction ref:* `load_golden` now asserts each
+    `claim_a`/`claim_b` references a real fact id (new test). *`_worst` misnamed* → renamed
+    `_best_verdict` (it returns the best-ranked verdict). *Phantom `""` predicate bucket:*
+    benign by construction — `check_extraction` always sets `predicate`, and the oracle
+    shape test (`test_every_fact_has_core_fields`) already rejects an empty golden predicate,
+    so no `""` bucket can reach `macro_recall`; left as-is with this rationale.
 
 ## Hand-off
 

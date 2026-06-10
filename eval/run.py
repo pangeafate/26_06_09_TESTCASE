@@ -94,6 +94,13 @@ def load_golden(path: Path = DEFAULT_GOLDEN) -> GoldenSet:
     _assert_unique_ids([f.id for f in facts], "golden fact")  # a dup id would mask a fact
     _assert_unique_ids([s.id for s in syns], "predicate synonym")
     _assert_unique_ids([c.id for c in cols], "entity collision")
+    # A contradiction's claim_a/claim_b must reference REAL golden fact ids — a dangling
+    # ref is a silently-broken oracle (the contradiction points at nothing). (Review MEDIUM)
+    fact_ids = {f.id for f in facts}
+    for c in cons:
+        for side in (c.claim_a, c.claim_b):
+            if side is not None and side not in fact_ids:
+                raise ValueError(f"contradiction '{c.id}' references unknown fact id '{side}'")
     return GoldenSet(
         facts=facts,
         contradictions=cons,
@@ -209,17 +216,17 @@ def _check_claim_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
     detail = "claim(s) exist but value/source/as_of differ"
     for c in claims:
         if not _values_match(fact.value, c.object_value):
-            best = _worst(best, Verdict.mismatch)
+            best = _best_verdict(best, Verdict.mismatch)
             continue
         sources = repo.get_sources([c.id]) if c.id is not None else []
         src_ok = any(_uri_matches(fact.source_uri, s.source_uri) for s in sources)
         if not src_ok:
-            best = _worst(best, Verdict.mismatch)
+            best = _best_verdict(best, Verdict.mismatch)
             detail = "right value, wrong/absent source"
             continue
         if _as_of_matches(fact.as_of, c.as_of, [s.as_of for s in sources]):
             return FactVerdict(fact.id, Verdict.found, "", predicate=pred)
-        best = _worst(best, Verdict.mismatch)
+        best = _best_verdict(best, Verdict.mismatch)
         detail = f"right value+source, as_of {c.as_of} != {fact.as_of}"
     return FactVerdict(fact.id, best, detail, predicate=pred)
 
@@ -242,7 +249,9 @@ def _check_link_fact(repo: Repository, fact: GoldenFact) -> FactVerdict:
     return FactVerdict(fact.id, Verdict.missing, f"no {link_type} {from_name}->{to_name}", predicate=link_type)
 
 
-def _worst(a: Verdict, b: Verdict) -> Verdict:
+def _best_verdict(a: Verdict, b: Verdict) -> Verdict:
+    """Return the more-favorable verdict (FOUND > MISMATCH > MISSING) — used to keep the
+    best outcome across the several claims that may sit on one (subject, predicate)."""
     order = {Verdict.missing: 0, Verdict.mismatch: 1, Verdict.found: 2}
     return a if order[a] >= order[b] else b
 
@@ -361,32 +370,55 @@ def score_contradiction(
     ``subject_entity_id`` (post-impl review): when the caller has resolved the golden
     subject, a surfaced contradiction must ALSO be on that entity — otherwise a spurious
     conflict on the WRONG subject but right predicate would over-credit. When ``None``
-    (no resolver / unresolved subject) the match falls back to predicate-only."""
+    (no resolver / unresolved subject) the match falls back to predicate-only.
+
+    Review H1 — the subject and both-id axes are kept SEPARATE. CORRECT requires a
+    *subject-confirmed* row (subject equal, or no resolved golden subject to check
+    against) carrying both distinct ids. A row that omits ``subject_entity_id`` cannot
+    be confirmed against a resolved golden subject, so even with both ids it caps at
+    PARTIAL — an unannotated row must not earn full credit by default."""
     want = _canon_pred(golden.predicate)
-    matches = [
-        c
-        for c in bundle.contradictions
-        if _canon_pred(c.predicate) == want
-        and (
-            subject_entity_id is None
-            or c.subject_entity_id is None
-            or c.subject_entity_id == subject_entity_id
+    pred_matches = [c for c in bundle.contradictions if _canon_pred(c.predicate) == want]
+
+    def _has_both(rows: list) -> bool:
+        return any(
+            c.claim_a_id is not None and c.claim_b_id is not None and c.claim_a_id != c.claim_b_id
+            for c in rows
         )
-    ]
-    if not matches:
+
+    if subject_entity_id is None:
+        # No resolved golden subject to check against → predicate-only grading.
+        if not pred_matches:
+            return ContradictionVerdict(
+                golden.id, ContradictionClass.incorrect, False,
+                "no contradiction surfaced on the predicate (silent merge)",
+            )
+        if _has_both(pred_matches):
+            return ContradictionVerdict(golden.id, ContradictionClass.correct, True, "both claim ids present")
+        return ContradictionVerdict(
+            golden.id, ContradictionClass.partial, False,
+            "surfaced but only one side carries a distinct claim id",
+        )
+
+    # Subject resolved → split the rows by whether they confirm the subject.
+    confirmed = [c for c in pred_matches if c.subject_entity_id == subject_entity_id]
+    unannotated = [c for c in pred_matches if c.subject_entity_id is None]
+    # rows with a DIFFERENT subject_entity_id are the wrong entity → ignored entirely.
+    if not confirmed and not unannotated:
         return ContradictionVerdict(
             golden.id, ContradictionClass.incorrect, False,
-            "no contradiction surfaced on the subject+predicate (silent merge)",
+            "no contradiction surfaced on the subject+predicate (silent merge / wrong subject)",
         )
-    both = any(
-        c.claim_a_id is not None and c.claim_b_id is not None and c.claim_a_id != c.claim_b_id
-        for c in matches
-    )
-    if both:
-        return ContradictionVerdict(golden.id, ContradictionClass.correct, True, "both claim ids present")
-    return ContradictionVerdict(
+    if _has_both(confirmed):  # only a SUBJECT-CONFIRMED both-id row earns CORRECT
+        return ContradictionVerdict(golden.id, ContradictionClass.correct, True, "both claim ids present on the resolved subject")
+    if confirmed:
+        return ContradictionVerdict(
+            golden.id, ContradictionClass.partial, False,
+            "surfaced on the subject but only one side carries a distinct claim id",
+        )
+    return ContradictionVerdict(  # unannotated only — can't confirm subject (H1)
         golden.id, ContradictionClass.partial, False,
-        "surfaced but only one side carries a distinct claim id",
+        "surfaced on the predicate but the row omits a subject — cannot confirm it is the right entity",
     )
 
 
@@ -398,15 +430,25 @@ def score_contradictions(
 ) -> list[ContradictionVerdict]:
     """Score every planted contradiction that a question references (``contradiction_ref``),
     using that question's already-collected bundle. When ``repo`` is given, the golden
-    subject is resolved so the verdict is subject-aware (post-impl review)."""
+    subject is resolved so the verdict is subject-aware (post-impl review).
+
+    Review H2 — a question whose ``ask()`` RAISED has no bundle in ``bundles``; that
+    contradiction is scored INCORRECT (the engine surfaced nothing), never silently
+    skipped, so a throwing model cannot earn a cleaner report than a wrong-answering one."""
     verdicts: list[ContradictionVerdict] = []
     by_id = {c.id: c for c in golden.contradictions}
     fact_by_id = {f.id: f for f in golden.facts}
     for q in questions:
         ref = q.contradiction_ref
-        if not (ref and ref in by_id and q.id in bundles):
+        if not (ref and ref in by_id):
             continue
         gc = by_id[ref]
+        if q.id not in bundles:  # ask() errored (or wasn't answerable) → nothing surfaced
+            verdicts.append(ContradictionVerdict(
+                gc.id, ContradictionClass.incorrect, False,
+                f"ask() produced no answer for '{q.id}' — contradiction not surfaced",
+            ))
+            continue
         subject_eid: Optional[int] = None
         if repo is not None:
             # context from one side's source helps disambiguate a colliding subject name

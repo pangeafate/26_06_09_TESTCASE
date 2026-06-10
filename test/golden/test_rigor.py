@@ -27,6 +27,7 @@ from eval.models import (
     ExtractionReport,
     FactVerdict,
     GoldenContradiction,
+    GoldenSet,
     Question,
     Verdict,
     wilson_interval,
@@ -38,6 +39,7 @@ from eval.run import (
     check_entity_collisions,
     load_golden,
     score_contradiction,
+    score_contradictions,
     _values_match,
 )
 
@@ -215,6 +217,50 @@ def test_contradiction_is_subject_aware():
     )
     v2 = score_contradiction(_golden_contradiction(), right_subject, subject_entity_id=5)
     assert v2.verdict is ContradictionClass.correct
+
+
+def test_contradiction_unannotated_row_caps_at_partial_when_subject_resolved():
+    # Review H1: a row that OMITS subject_entity_id cannot be confirmed against a resolved
+    # golden subject — even with both distinct ids it must NOT score CORRECT (caps at
+    # PARTIAL), or an engine that never annotates subjects inflates the contradiction score.
+    unannotated = AnswerBundle(
+        answer="x",
+        contradictions=[Contradiction(predicate="ga_target", claim_a_id=1, claim_b_id=2)],  # no subject
+    )
+    v = score_contradiction(_golden_contradiction(), unannotated, subject_entity_id=5)
+    assert v.verdict is ContradictionClass.partial
+    assert v.both_ids_present is False
+    # …but with NO resolved golden subject (subject_entity_id=None) the same row is the best
+    # signal available → predicate-only CORRECT (back-compat).
+    v_compat = score_contradiction(_golden_contradiction(), unannotated)
+    assert v_compat.verdict is ContradictionClass.correct
+
+
+def test_score_contradictions_errored_ask_scores_incorrect():
+    # Review H2: a question carrying a contradiction_ref whose ask() raised has NO bundle —
+    # it must score INCORRECT (engine surfaced nothing), never be silently skipped.
+    golden = GoldenSet(facts=[], contradictions=[_golden_contradiction()])
+    q = Question(id="q-confluence", q="?", checks=["surfaces_contradiction"],
+                 contradiction_ref="confluence-ga-timeline")
+    verdicts = score_contradictions(golden, [q], bundles={})  # empty = ask() failed
+    assert len(verdicts) == 1
+    assert verdicts[0].verdict is ContradictionClass.incorrect
+
+
+def test_load_golden_rejects_dangling_contradiction_ref(tmp_path):
+    # Review MEDIUM: a contradiction pointing at a non-existent fact id is a broken oracle.
+    bad = tmp_path / "facts.yaml"
+    bad.write_text(
+        "facts:\n"
+        "  - {id: f1, format: md, kind: claim, subject: HelixPay, predicate: revenue,"
+        " value: '14.2M', source_uri: data/overview.md}\n"
+        "contradictions:\n"
+        "  - {id: c1, kind: temporal, subject: HelixPay, predicate: revenue,"
+        " claim_a: f1, claim_b: does-not-exist}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown fact id"):
+        load_golden(bad)
 
 
 # --------------------------------------------------------------------------- #
