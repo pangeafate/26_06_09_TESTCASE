@@ -47,6 +47,22 @@ operator-gated (see `workspace/acceptance/SP016_live_verification.md`).
 
 ## Sprint History
 
+### SP_018: RDD/SRP refactor — separate domain logic from I/O
+
+- **Status**: Complete
+- **Date**: 2026-06-10
+- **Summary**: Behavior-preserving SRP split driven by a `/my-rdd-review` audit. Extracted
+  pure domain logic out of three I/O-mixed hot spots into four new pure modules:
+  `query/citations.py` (citation resolve/dedup/confidence, out of `synthesis.enforce_citations`),
+  `ingest/extract/validate.py` + `glean.py` (per-item coerce/validate/loss-accounting and
+  gleaning dedup, out of `ChunkExtractor`), and `ingest/assemble.py` (claim/link build +
+  same-source supersession decision, out of `pipeline`). Also fixed `.validators.yml`
+  `module_size.source_roots` (was `[src,scripts,skills]` — scanned nothing; now `[helixpay,
+  scripts]`) so the GL-RDD size sensor actually scans the codebase. No contract/schema/DB
+  change. Plan-blind review: no CRITICAL, no behavior change.
+- **Tests added**: +40 (test_citations 12, test_glean 8, test_validate 6, test_assemble 14);
+  560 unit passing, mypy clean, module-size sensor clean over 83 files.
+
 ### SP_002–SP_007: HelixPay Phase 1 six-agent fan-out
 
 - **Status**: Complete (integrated on `merge/integration`)

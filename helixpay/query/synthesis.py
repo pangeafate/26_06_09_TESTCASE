@@ -25,19 +25,21 @@ into the returned ``citations`` list only. Where a cited claim carries a verbati
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from helixpay.contracts import Chunk, Citation, Claim, Contradiction, Link
+from helixpay.query.citations import (
+    FALLBACK_ANSWER,
+    collect_ref_ids,
+    resolve_cited_sentences,
+)
 from helixpay.query.consensus import ConsensusGroup
 
 if TYPE_CHECKING:
     from helixpay.contracts import Repository
-
-FALLBACK_ANSWER = "I could not find sufficient cited evidence to answer that."
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "ask_synthesis.md"
 
@@ -221,19 +223,14 @@ def render_prompt(question: str, grounding: str) -> str:
     return _PLACEHOLDER_RE.sub(lambda m: mapping[m.group(0)], load_prompt())
 
 
-def _valid_markers(sentence: object, facts: dict[str, GroundingFact]) -> list[str]:
-    """The in-index markers a sentence cites (defends against malformed output)."""
-    if not isinstance(sentence, dict):
-        return []
-    cites = sentence.get("cites")
-    cites = cites if isinstance(cites, list) else []
-    return [m for m in cites if isinstance(m, str) and m in facts]
-
-
 def enforce_citations(
     output: dict, facts: dict[str, GroundingFact], repo: "Repository"
 ) -> tuple[str, list[Citation], list[int], float]:
     """Keep only sentences whose markers resolve to a real ``Citation``; resolve them.
+
+    Thin I/O shell over :mod:`helixpay.query.citations` (SP_018): bucket the cited
+    ref-ids, batch-resolve each bucket through the ``Repository``, apply the
+    verbatim-evidence override, then delegate the pure keep/dedup/confidence logic.
 
     Returns ``(answer, citations, cited_claim_ids, confidence)``. ``cited_claim_ids`` is
     **claim-only** (the engine trace + confidence read it); chunk/link citations are
@@ -242,24 +239,9 @@ def enforce_citations(
     unresolved marker can never become a ``Citation``.
     """
     raw_sentences = output.get("sentences") if isinstance(output, dict) else None
-    if not isinstance(raw_sentences, list):
-        raw_sentences = []
 
-    # 1. collect every distinct ref a sentence points at, by kind, and resolve up-front.
-    claim_ids: list[int] = []
-    chunk_ids: list[int] = []
-    link_ids: list[int] = []
-    for sentence in raw_sentences:
-        for m in _valid_markers(sentence, facts):
-            f = facts[m]
-            if f.ref_id is None:
-                continue
-            bucket = {"claim": claim_ids, "chunk": chunk_ids, "link": link_ids}.get(
-                f.kind
-            )
-            if bucket is not None and f.ref_id not in bucket:
-                bucket.append(f.ref_id)
-
+    # 1. bucket the distinct refs the sentences cite, then resolve each through the repo.
+    claim_ids, chunk_ids, link_ids = collect_ref_ids(raw_sentences, facts)
     claim_cites = {
         c.claim_id: c for c in repo.get_sources(claim_ids) if c.claim_id is not None
     }
@@ -272,7 +254,8 @@ def enforce_citations(
         c.link_id: c for c in repo.get_link_sources(link_ids) if c.link_id is not None
     }
 
-    # Verbatim-span override: quote the claim's evidence instead of the chunk prefix.
+    # 2. verbatim-span override: quote the claim's evidence instead of the chunk prefix.
+    #    (kept here — it needs the resolved Citation objects from the repo reads above.)
     evidence_by_claim = {
         f.ref_id: f.evidence
         for f in facts.values()
@@ -282,54 +265,11 @@ def enforce_citations(
         if cid in claim_cites:
             claim_cites[cid] = claim_cites[cid].model_copy(update={"snippet": ev})
 
-    # 2. keep a sentence iff >=1 of its markers resolved; collect its citations.
-    kept: list[str] = []
-    citations: list[Citation] = []
-    cited_claim_ids: list[int] = []
-    seen_claim: set[int] = set()
-    seen_cite: set[tuple] = set()
-    for sentence in raw_sentences:
-        text_val = sentence.get("text") if isinstance(sentence, dict) else None
-        text = text_val.strip() if isinstance(text_val, str) else ""
-        sent_cites: list[Citation] = []
-        sent_claim_ids: list[int] = []
-        for m in _valid_markers(sentence, facts):
-            f = facts[m]
-            if f.kind == "claim" and f.ref_id in claim_cites:
-                sent_cites.append(claim_cites[f.ref_id])
-                sent_claim_ids.append(f.ref_id)
-            elif f.kind == "chunk" and f.ref_id in chunk_cites:
-                sent_cites.append(chunk_cites[f.ref_id])
-            elif f.kind == "link" and f.ref_id in link_cites:
-                sent_cites.append(link_cites[f.ref_id])
-        if not text or not sent_cites:
-            continue
-        kept.append(text)
-        for cid in sent_claim_ids:
-            if cid not in seen_claim:
-                seen_claim.add(cid)
-                cited_claim_ids.append(cid)
-        for cit in sent_cites:
-            key = (cit.claim_id, cit.chunk_id, cit.link_id, cit.source_uri)
-            if key not in seen_cite:
-                seen_cite.add(key)
-                citations.append(cit)
-
-    if not kept:
-        return FALLBACK_ANSWER, [], [], 0.0
-
-    answer = " ".join(kept)
+    # 3. pure keep/dedup + confidence over the already-resolved cite maps.
     raw_conf = output.get("confidence") if isinstance(output, dict) else None
-    try:
-        confidence = float(raw_conf)  # type: ignore[arg-type]
-        if not math.isfinite(confidence):  # reject NaN/inf the model may emit
-            raise ValueError("non-finite confidence")
-        confidence = max(
-            0.0, min(1.0, confidence)
-        )  # clamp to the documented 0..1 range
-    except (TypeError, ValueError):
-        confidence = min(0.9, 0.3 + 0.15 * len(citations))
-    return answer, citations, cited_claim_ids, confidence
+    return resolve_cited_sentences(
+        raw_sentences, facts, claim_cites, chunk_cites, link_cites, raw_conf
+    )
 
 
 __all__ = [

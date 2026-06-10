@@ -33,8 +33,10 @@ coverage:
 # skipped. All keys are optional — omit the block to run with built-in defaults.
 module_size:
   enabled: true
-  # Directories scanned for source files (relative to project root).
-  source_roots: [src, scripts, skills]
+  # Directories scanned for source files (relative to project root). HelixPay's
+  # production code lives in helixpay/ (there is no src/); without it the GL-RDD
+  # size sensor scanned nothing real (SP_018).
+  source_roots: [helixpay, scripts]
   # File extensions treated as source (defaults cover most mainstream langs).
   extensions: ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.rb', '.php', '.cs', '.cpp', '.swift']
   warn_lines: 800       # WARNING above this — approaching God-file size

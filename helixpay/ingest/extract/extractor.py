@@ -20,28 +20,37 @@ SP_014 changes:
 - ``ChunkExtractor.__init__`` gains an optional ``ledger: LossLedger`` parameter (default:
   fresh LossLedger per instance).
 - ``_run_pass`` now returns ``tuple[Optional[ExtractionOut], bool]`` = (out, truncated)
-  and calls ``coerce_item`` on each raw item before strict validation (replaces the old
-  ``_validate_items`` which did not coerce).
+  and coerces each raw item before strict validation.
 - ``extract`` records all loss counters via the ledger.
 - Hypothetical drops are counted via ``ledger.record_drop(..., "hypothetical")``.
+
+SP_018 (RDD/SRP): the per-item coerce→validate→record-loss step moved to
+``extract.validate.validate_items`` and the gleaning dedup/merge helpers to
+``extract.glean`` (``claim_key``/``rel_key``/``dump_already``/``estimate_tokens``/
+``merge_new``). ``ChunkExtractor`` keeps only orchestration (``extract``/``_glean``/
+``_run_pass``) + the thin grounding penalty.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Type
-
-from pydantic import ValidationError
+from typing import Optional
 
 from helixpay.contracts import Chunk
-from helixpay.ingest.extract.coerce import coerce_item
+from helixpay.ingest.extract.glean import (
+    claim_key,
+    dump_already,
+    estimate_tokens,
+    merge_new,
+    rel_key,
+)
 from helixpay.ingest.extract.grounding import GRADE_UNGROUNDED, grade
 from helixpay.ingest.extract.ledger import LossLedger
 from helixpay.ingest.extract.llm import LLMClient, call_structured
 from helixpay.ingest.extract.prompts import render
 from helixpay.ingest.extract.schemas import ClaimOut, ExtractionOut, RawExtraction, RelationOut
+from helixpay.ingest.extract.validate import validate_items
 
 log = logging.getLogger("helixpay.ingest.extract.extractor")
 
@@ -141,30 +150,17 @@ class ChunkExtractor:
     def _glean(self, chunk: Chunk, ctx: ChunkContext, claims: list[ClaimOut], relations: list[RelationOut]) -> None:
         if self.glean_passes <= 0:
             return
-        seen = {self._claim_key(c) for c in claims}
-        seen_rel = {self._rel_key(r) for r in relations}
+        seen = {claim_key(c) for c in claims}
+        seen_rel = {rel_key(r) for r in relations}
         for _ in range(self.glean_passes):
-            already = self._dump_already(claims, relations)
-            if self._estimate_tokens(chunk.text + already) > self.glean_token_budget:
+            already = dump_already(claims, relations)
+            if estimate_tokens(chunk.text + already) > self.glean_token_budget:
                 log.info("glean skipped: over token budget", extra={"source_uri": ctx.source_uri, "ordinal": chunk.ordinal})
                 return
             extra_out, _ = self._run_pass(_GLEAN_PROMPT, chunk, ctx, already=already)
             if extra_out is None:
                 return  # bad gleaning pass — keep what we have, never discard the base pass
-            added = False
-            for c in extra_out.claims:
-                ckey = self._claim_key(c)
-                if ckey not in seen:
-                    seen.add(ckey)
-                    claims.append(c)
-                    added = True
-            for r in extra_out.relations:
-                rkey = self._rel_key(r)
-                if rkey not in seen_rel:
-                    seen_rel.add(rkey)
-                    relations.append(r)
-                    added = True
-            if not added:
+            if not merge_new(claims, relations, extra_out, seen, seen_rel):
                 return  # early stop: a pass that found nothing new means we're done
 
     def _run_pass(
@@ -194,80 +190,9 @@ class ChunkExtractor:
             self.ledger.record_truncated(ctx.source_uri)
         if res.value is None:
             return None, res.truncated
-        claims = self._coerce_and_validate(res.value.claims, ClaimOut, "claim", ctx)
-        relations = self._coerce_and_validate(res.value.relations, RelationOut, "relation", ctx)
+        claims = validate_items(res.value.claims, ClaimOut, "claim", ctx.source_uri, self.ledger)
+        relations = validate_items(res.value.relations, RelationOut, "relation", ctx.source_uri, self.ledger)
         return ExtractionOut(claims=claims, relations=relations), res.truncated
-
-    def _coerce_and_validate(
-        self,
-        raw_items: list[dict],  # noqa: unparameterised dict is fine here
-        schema: Any,
-        kind: str,
-        ctx: ChunkContext,
-    ) -> list[Any]:
-        """Coerce then strictly validate each raw item; drop and count failures.
-
-        Replaces the old ``_validate_items`` with a coerce-before-validate step that
-        normalises the model's natural emissions (quarter as_of, link verb synonyms, entity
-        noun synonyms) before the strict Pydantic check.
-        """
-        out = []
-        for raw_item in raw_items:
-            self.ledger.record_emitted(ctx.source_uri)
-            coerced = coerce_item(raw_item, kind=kind)
-            if coerced.item is None:
-                # Dropped by coercion (unmappable_enum or unparseable_as_of)
-                for ck in coerced.coercions:
-                    self.ledger.record_coerced(ctx.source_uri, ck)
-                self.ledger.record_drop(ctx.source_uri, coerced.drop_reason or "unmappable_enum")
-                log.warning(
-                    "drop invalid %s item (coerce)",
-                    kind,
-                    extra={"source_uri": ctx.source_uri, "reason": coerced.drop_reason, "kind": kind},
-                )
-                continue
-            # Record any successful coercions before strict validation
-            for ck in coerced.coercions:
-                self.ledger.record_coerced(ctx.source_uri, ck)
-            try:
-                out.append(schema.model_validate(coerced.item))
-            except ValidationError as exc:
-                self.ledger.record_drop(ctx.source_uri, "validation_error")
-                log.warning(
-                    "drop invalid %s item",
-                    kind,
-                    extra={"source_uri": ctx.source_uri, "errors": exc.error_count(), "kind": kind},
-                )
-        return out
-
-    @staticmethod
-    def _claim_key(c: ClaimOut) -> tuple[str, str, str, str]:
-        # include as_of so the same value at a different date is NOT collapsed (temporal
-        # distinctness — the ontology never collapses conflicting/temporally-distinct facts)
-        return (
-            c.subject.strip().lower(),
-            c.predicate.strip().lower(),
-            (c.object_value or "").strip().lower(),
-            (c.as_of or "").strip(),
-        )
-
-    @staticmethod
-    def _rel_key(r: RelationOut) -> tuple[str, str, str]:
-        return (r.from_entity.strip().lower(), r.to_entity.strip().lower(), r.link_type)
-
-    @staticmethod
-    def _dump_already(claims: list[ClaimOut], relations: list[RelationOut]) -> str:
-        return json.dumps(
-            {
-                "claims": [{"subject": c.subject, "predicate": c.predicate, "object_value": c.object_value} for c in claims],
-                "relations": [{"from_entity": r.from_entity, "to_entity": r.to_entity, "link_type": r.link_type} for r in relations],
-            },
-            ensure_ascii=False,
-        )
-
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        return len(text) // 4  # cheap heuristic; avoids a tokenizer dep in the unit path
 
     # ------------------------------------------------------------------ #
     # grounding

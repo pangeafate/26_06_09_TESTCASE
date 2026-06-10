@@ -21,8 +21,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Protocol
 
-from helixpay.contracts import Chunk, Claim, Document, Link, Repository, SourceConnector
-from helixpay.ingest.contradict import detect, values_conflict
+from helixpay.contracts import Chunk, Claim, Document, Repository, SourceConnector
+from helixpay.ingest.assemble import build_claim, build_link, should_supersede
+from helixpay.ingest.contradict import detect
 from helixpay.ingest.embed import VoyageEmbedder
 from helixpay.ingest.extract.extractor import ChunkContext, ChunkExtractor
 from helixpay.ingest.extract.ledger import LossLedger
@@ -181,14 +182,13 @@ def _ingest_document(
                 report.dropped_mentions += 1
                 continue
             predicate = repo.canonical_predicate(claim_out.predicate)
-            claim = Claim(
-                subject_entity_id=subject_id,
+            claim = build_claim(
+                claim_out,
+                subject_id=subject_id,
                 predicate=predicate,
-                object_value=claim_out.object_value,
-                as_of=claim_out.as_of_date() or doc.as_of,
-                confidence=claim_out.confidence,
-                source_chunk_id=chunk_id,
+                chunk_id=chunk_id,
                 document_id=doc_id,
+                doc_as_of=doc.as_of,
             )
             new_id = repo.add_claim(claim)
             report.claims += 1
@@ -201,21 +201,13 @@ def _ingest_document(
             if from_id is None or to_id is None:
                 report.dropped_mentions += 1
                 continue
-            if from_id == to_id:
+            link = build_link(rel, from_id=from_id, to_id=to_id, chunk_id=chunk_id, doc_as_of=doc.as_of)
+            if link is None:
                 # a self-loop (e.g. two surface forms collapsing to one entity) would
                 # corrupt the org graph and risk recursive-CTE cycles — drop it.
                 log.warning("skip self-loop relation", extra={"entity_id": from_id, "link_type": rel.link_type})
                 continue
-            repo.add_link(
-                Link(
-                    from_entity_id=from_id,
-                    to_entity_id=to_id,
-                    link_type=rel.link_type,
-                    as_of=rel.as_of_date() or doc.as_of,
-                    confidence=rel.confidence,
-                    source_chunk_id=chunk_id,
-                )
-            )
+            repo.add_link(link)
             report.links += 1
 
 
@@ -230,25 +222,24 @@ def _maybe_supersede(
     """Same-source temporal supersession: when this newer claim restates an older one from
     the *same file* with a different value, set the old claim's ``valid_to``/``superseded_by``
     (never delete). Cross-source disagreement is intentionally left to contradiction
-    detection, so a real contradiction is never collapsed."""
+    detection, so a real contradiction is never collapsed.
+
+    The decision rule is pure (:func:`assemble.should_supersede`); this function keeps only
+    the Repository I/O — fetching the (subject, predicate) group, resolving each candidate's
+    source uri, and applying the supersession write."""
     if new_claim.as_of is None:
-        return  # supersede_claim requires a concrete valid_to date
+        return  # supersede_claim requires a concrete valid_to date; nothing to scan
     for existing in repo.get_claims(subject_id, predicate):
         if existing.id is None or existing.id == new_id or existing.superseded_by is not None:
-            continue
-        if existing.as_of is None or existing.as_of >= new_claim.as_of:
-            continue  # only a strictly-older value is superseded
-        if not values_conflict(existing.object_value, new_claim.object_value):
-            continue  # identical value — nothing to supersede
+            continue  # skip the just-added claim and already-closed rows
         cites = repo.get_sources([existing.id])
         prior_uri = cites[0].source_uri if cites else None
-        if prior_uri != source_uri:
-            continue  # different source → that's a contradiction, not a supersession
-        repo.supersede_claim(existing.id, new_id, valid_to=new_claim.as_of)
-        log.info(
-            "superseded same-source claim",
-            extra={"old": existing.id, "new": new_id, "source_uri": source_uri},
-        )
+        if should_supersede(existing, new_claim, prior_uri=prior_uri, source_uri=source_uri):
+            repo.supersede_claim(existing.id, new_id, valid_to=new_claim.as_of)
+            log.info(
+                "superseded same-source claim",
+                extra={"old": existing.id, "new": new_id, "source_uri": source_uri},
+            )
 
 
 __all__ = ["run", "IngestReport"]
