@@ -104,6 +104,22 @@ def test_overview_seeds_project_entities_for_target_facts():
     assert ("Project Confluence", "Confluence") in alias_map
 
 
+def test_overview_seeds_named_merchant_account_acai():
+    # SP_010 final-mile: a named merchant account that carries cross-document ownership /
+    # escalation records (Açaí Express SP) is seeded as a `customer` so it resolves to ONE
+    # row. Without it the account is mentioned with two subject_types (customer AND other),
+    # mints two unseeded rows, and the owns-link endpoint becomes unresolvable (the link is
+    # dropped at ingest and the grader's bare-name resolve returns None). Same pattern as the
+    # project entities above: a cross-doc entity the golden facts hang off, seeded explicitly.
+    ov = parse_overview("")
+    assert "Açaí Express SP" in ov.entities
+    assert ov.entities["Açaí Express SP"].entity_type == "customer"
+    assert ov.entities["Açaí Express SP"].seeded is True
+    alias_map = {(c, a) for c, a in ov.aliases}
+    # an accent-folded alias so a folded mention still resolves to the accented canonical
+    assert ("Açaí Express SP", "Acai Express SP") in alias_map
+
+
 # --------------------------------------------------------------------------- #
 # smoke over the real data/ file (excluded from the fast unit suite)
 # --------------------------------------------------------------------------- #

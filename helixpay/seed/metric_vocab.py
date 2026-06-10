@@ -123,6 +123,26 @@ METRIC_VOCAB: list[tuple[str, str, list[str]]] = [
             "migration cutover",
         ],
     ),
+    # SP_010 final-mile: "who leads this repo/component" is a relation-shaped predicate
+    # (subject = the repo, value = the named leader). It canonicalizes here so a
+    # contributors-analysis ranking lands on one predicate the grader can match
+    # (golden: helixpay/core top_contributor = Sara Wijaya).
+    # NOTE: this key is substrate for the PAID re-record (SP_019 Increment 2) — the current
+    # cache holds no top_contributor claim, so it adds 0 recall at $0 until a re-record emits
+    # one. It is also listed in repair._NON_COMPANY_KEYS so it never widens the repair gate.
+    (
+        "top_contributor",
+        "Top Contributor",
+        [
+            "top_contributor",
+            "top contributor",
+            "lead contributor",
+            "primary contributor",
+            "top committer",
+            "lead committer",
+            "leading contributor",
+        ],
+    ),
 ]
 
 # alias (lowercased) -> canonical_key

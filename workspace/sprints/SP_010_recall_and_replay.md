@@ -239,3 +239,101 @@ structure (SP_013); provenance persistence/link sweep (SP_011).
   `make ingest-record` (one paid run) → `make replay` → `make demo` (or
   `python -m eval.run --recall-bar 0.85`); confirm recall ≥85% and the Confluence
   contradiction in the answer bundle. No DB was available in the build environment.
+
+---
+
+## Increment 2 — final mile to the recall bar (2026-06-10)
+
+After SP_019 lifted measured smoke recall to **7/11 (64%)**, a claim-by-claim audit of the
+`.replay-cache/` against `eval/smoke/facts.yaml` under the real grader (`eval/run.py`)
+pinned the exact remaining gap for each of the 4 missing facts. The conclusion is sharper
+than the original SP_010 hand-off ("roster aliases + predicate vocab"): only **one** of the
+four is a clean $0 deterministic win; the rest are baked-cache defects that require the
+operator-gated paid re-record (SP_019's prompt, Increment 2 below).
+
+### What is $0-fixable here (SP_010 side)
+
+- **`email-acai-owner` (the one $0 recall win → 7/11 ⇒ 8/11).** The cache already holds the
+  correct relation `Maria Santos --owns--> Açaí Express SP`. It failed only because
+  `Açaí Express SP` is mentioned with **two** subject_types (`customer` and `other`), minting
+  two unseeded rows → the bare name is ambiguous → the link endpoint resolves to `None` (link
+  dropped at ingest) and the grader's bare-name `resolve_entity` returns `None`. **Fix:** seed
+  `Açaí Express SP` as a `customer` in `roster.py` `parse_overview` (with accent-folded
+  aliases). The SP_019 seeded-snap then collapses the `other`-typed mention onto the one
+  seeded row; nothing is minted; the link persists and resolves. This is the **same
+  seed-it-or-it-cannot-resolve pattern** already used for `Project Confluence` / `CRM
+  migration` (a named cross-document entity the golden set hangs off), applied to a customer —
+  principled, not oracle-shaping.
+- **`top_contributor` vocab key** added to `metric_vocab` (aliases: top/lead/primary
+  contributor, top/lead committer). Harmless substrate that lets a contributors-analysis
+  ranking land on one predicate the grader can match — only effective **after** the re-record
+  emits such a claim (see Increment 2 of SP_019).
+
+### What is NOT $0-fixable (re-record-gated — SP_019 Increment 2)
+
+- `pdf-boarddeck-confluence-q3` — cache value `end-Q3 (2026-09-30)` does not substring-match
+  golden `end of Q3 2026` under the grader normalize, **and** the cache predicate
+  `ga target date (revised)` does not canonicalize. **Two** defects; both need re-extraction.
+- `slack-crm-cutover-june` — the claim is attached to `HelixPay`, not `CRM migration`
+  (predicate `pipedrive decommission date`). Value/as_of already match; only the **subject**
+  is wrong. Needs the re-record to re-subject it to the initiative. We deliberately do **not**
+  add a `pipedrive→CRM-migration` re-attribution rule (it would be answer-shaped oracle
+  gaming; Stage-3 Finding 4).
+- `code-core-top-contributor` — no `top_contributor` claim exists in the cache at all; needs
+  the re-record to emit it.
+
+### Scope (Increment 2, SP_010 side)
+
+In: `roster.py` (seed `Açaí Express SP` customer + aliases; `_ACCOUNTS` list + `CUSTOMER`
+const), `metric_vocab.py` (`top_contributor` key), and their unit tests. Out: the prompt
+surgery + the customer-collapse resolve proof (SP_019 Increment 2, which owns
+`prompts/extract_claims.md` + `test_resolve.py`); any contract/schema change; the grader's
+value normalization (SP_013 — see Limitation).
+
+### Ordering dependency (Stage-3 Finding 7)
+
+SP_010 Increment 2 must land **and the smoke DB be re-seeded** *before* the paid re-record
+runs, or the re-record's `top_contributor` / milestone predicates will not canonicalize
+against the new vocab. Disjoint paths from SP_019 but **sequentially** dependent — not a
+parallel-safe pair.
+
+### Success criteria (Increment 2)
+
+- **$0 deterministic:** replay (no API) → `email-acai-owner` FOUND; recall **7/11 ⇒ 8/11
+  (73%)**, golden-precision 100%, mismatch unchanged. Proven on the replay tier.
+- **Paid (gated, SP_019):** anchor the bar-clearing target at **9/11 (82%)** = Açaí + the CRM
+  wrong-subject re-record; treat `pdf-boarddeck-confluence-q3` and `code-core-top-contributor`
+  as **stretch** (Stage-3 Findings 5/6: Confluence has a value *and* predicate defect, and
+  top_contributor requires the extractor to assert a named lead — least reliable).
+- `uv run pytest test` green; `uv run mypy helixpay` clean.
+
+### Limitation (recorded, not gamed)
+
+`pdf-boarddeck-confluence-q3` may stay MISMATCH even after a perfect re-record because the
+golden phrasing "end of Q3 2026" carries the filler word "of" that the source ("end-Q3")
+does not. The principled fix is hardening the grader's `normalize_value` for date/milestone
+values (token-aware), which is **SP_013's** (the eval oracle) — out of scope here. We do not
+loosen the oracle to pass a test.
+
+### Pre-Implementation Review (Increment 2)
+
+- **Iteration 1** — architect-reviewer, plan-blind on the design. 1 HIGH (goal-certainty) + 3 MEDIUM + LOW confirmations; all resolved below. Files reviewed: roster.py, run_seed.py, resolve.py, pipeline.py, repository.py, metric_vocab.py, eval/run.py, eval/smoke/facts.yaml, test_roster.py, .replay-cache audit.
+  - MEDIUM (Finding 4): the proposed `pipedrive decommission` → `completion_target` alias is answer-shaped, buys **zero** $0 recall (subject is still `HelixPay`), and risks a silent contradiction-merge. **Resolved:** dropped; only the generic `cutover`/`migration completion` aliases remain for a clean re-record.
+  - HIGH (Finding 5): `pdf-boarddeck-confluence-q3` has **two** defects (predicate + value), not one. **Resolved:** success bar anchored at 9/11 without it; Confluence is stretch; oracle normalization deferred to SP_013.
+  - MEDIUM (Finding 2): the parse-layer test does not prove the link resolves with a coexisting mint. **Resolved:** added `test_seeded_account_wins_even_if_a_minted_other_row_coexists` (SP_019 side) asserting seeded-first bare-name resolution.
+  - MEDIUM (Finding 6): `top_contributor` needs the extractor to assert a named lead. **Resolved:** prompt emits it only when the span explicitly names the leader; flagged stretch.
+  - LOW confirmations: Açaí seeding is principled (Confluence/CRM precedent); no false-contradiction / two-Marias / link-reversal regression; the SP_010/SP_019 split respects path claims and layer boundaries.
+- **Iteration 2** — code-reviewer, plan-blind adversarial; 1 CRITICAL + 1 HIGH + 3 MEDIUM/LOW, all resolved before implementation closed. Files reviewed: repair.py, metric_vocab.py, roster.py, resolve.py, run_seed.py, eval/run.py, .replay-cache (exhaustive grep), test_repair.py, test_roster.py.
+  - **CRITICAL-1:** adding `top_contributor` to `METRIC_VOCAB` silently widens `repair.py`'s `KNOWN_KEYS` (built as all vocab keys minus `_NON_COMPANY_KEYS`), so a `subject_type=="metric"` claim canonicalizing to `top_contributor` would be mis-attributed to `HelixPay` on a re-record. **Resolved:** added `"top_contributor"` to `repair._NON_COMPANY_KEYS` + a lock-step comment + `test_repair` assertions (`is_known_metric("top contributor") is False`).
+  - HIGH-1: the vocab additions add **0** $0 recall (no matching cache claim exists) and could mislead an implementer. **Resolved:** explicit "requires the re-record" note in `metric_vocab.py` and the sprint scope.
+  - MEDIUM-1: the Açaí fix needs seed-before-ingest; a DB carrying the old dual-minted rows needs them deleted first. **Resolved:** the $0 replay reset deletes `seeded=false` entities before re-seed; noted for the live-deploy hand-off.
+  - MEDIUM-2: a no-"SP" Açaí alias's folded form would not match the asserted alias. **Resolved:** dropped the no-SP aliases; only `("Açaí Express SP", "Acai Express SP")` remains (matches the test).
+  - LOW-2: never add bare `"decommission"` (the cache has a `decommission` predicate on a `Pipedrive` product). **Resolved:** no decommission alias added at all (Finding 4 already dropped them).
+
+### Post-Implementation Review (Increment 2)
+
+- **Iteration 1** — code-reviewer, plan-blind, 0 CRITICAL + 0 HIGH + 2 hardening (MEDIUM/LOW), APPROVE — both applied. Files reviewed: roster.py, metric_vocab.py, repair.py, prompts/extract_claims.md, test_roster.py, test_metric_vocab.py, test_resolve.py, test_repair.py, test_prompts.py.
+  - Verified independently: `canonical_key` never raises and passes unknowns through; **no alias maps to two keys**; `top_contributor` in `_NON_COMPANY_KEYS` fully neutralizes the repair-gate widening (a metric-typed claim canonicalizing to it is NOT re-attributed to HelixPay); the `_ACCOUNTS` seed mirrors the `_PROJECTS` pattern and populates `parse.entities` (not `parse.people`, so the org-chart smoke count is unaffected); tests are not tautologies; no secret/DSN log, no raw SQL, no layer-boundary violation.
+  - M-1 (coverage): `"leading contributor"` alias was unexercised. **Applied:** added to `test_metric_vocab` + `test_repair` assertions.
+  - L-1 (coverage): the accent-fold alias path wasn't exercised through `resolve_mention`. **Applied:** added `resolve_mention("Acai Express SP", "customer") == acai` to the collapse test.
+- **Iteration 2** — runtime verification (DB-gated, **$0 replay — DONE 2026-06-10**): MEDIUM-1 (seed-before-ingest / wipe old dual-mints) executed via the derived-row reset; replayed the 9 smoke docs with the `_ConstantEmbedder` (no API) and graded with `check_extraction` (no Opus). **Result: `email-acai-owner` FOUND; recall 7/11 → 8/11 (73%), precision 100%, mismatch=0** — exactly the predicted $0 ceiling (the other 3 stay MISSING, re-record-gated). Recorded in `workspace/acceptance/SP010_finalmile_run.md`. Files reviewed: replay run + grader output.

@@ -52,6 +52,49 @@ def test_ga_target_and_completion_target_are_distinct_keys():
     assert "ga_target" in keys and "completion_target" in keys
 
 
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # SP_010 final-mile: "who leads this repo/component" ranking predicates canonicalize
+        # onto top_contributor (the golden code-core-top-contributor fact's predicate).
+        ("top_contributor", "top_contributor"),
+        ("top contributor", "top_contributor"),
+        ("lead contributor", "top_contributor"),
+        ("primary contributor", "top_contributor"),
+        ("top committer", "top_contributor"),
+        ("lead committer", "top_contributor"),
+        ("leading contributor", "top_contributor"),
+    ],
+)
+def test_final_mile_predicate_synonyms_canonicalize(raw, expected):
+    assert canonical_key(raw) == expected
+
+
+def test_top_contributor_is_a_distinct_key():
+    keys = {k for k, _, _ in METRIC_VOCAB}
+    assert "top_contributor" in keys
+
+
+def test_migration_START_does_not_canonicalize_to_completion_target():
+    # Guard: a START date is NOT a completion. "hubspot migration start date" (the cache's
+    # May-1 start claim) must never land on completion_target, or it would false-pair with the
+    # end-of-June completion. It is unknown → passes through unchanged.
+    assert canonical_key("hubspot migration start date") != "completion_target"
+    assert canonical_key("migration start") != "completion_target"
+
+
+def test_no_alias_maps_to_two_distinct_keys():
+    # A lowercased alias appearing under two canonical keys is a silent last-wins bug.
+    seen: dict[str, str] = {}
+    for key, _display, aliases in METRIC_VOCAB:
+        for alias in (key, *aliases):
+            a = alias.lower()
+            assert a not in seen or seen[a] == key, (
+                f"alias {a!r} maps to both {seen.get(a)!r} and {key!r}"
+            )
+            seen[a] = key
+
+
 def test_unknown_predicate_passthrough_never_raises():
     # review M-1: unknown predicates must pass through unchanged, not raise.
     assert (
