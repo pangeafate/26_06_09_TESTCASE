@@ -23,6 +23,12 @@ COPY . .
 # Install the package and its runtime dependencies into the system environment.
 RUN uv pip install --system .
 
+# The extraction prompts live at repo-root `prompts/` (reviewable data, not package
+# code), so the install-anchored loader can't find them once `helixpay` is in
+# site-packages. Point it at the copied tree — the loader's sanctioned override for
+# "alternative packaging" (helixpay/ingest/extract/prompts.py).
+ENV HELIXPAY_PROMPTS_DIR=/app/prompts
+
 # Drop privileges: run the server as a non-root user. The app writes nothing to
 # the image filesystem (state lives in the db container's volume), so read-only
 # /app owned by root is fine; port 8000 is unprivileged.

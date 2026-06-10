@@ -24,9 +24,11 @@ up:
 ingest:
 	$(APP_RUN) helixpay ingest ./data
 
-## demo: run the eval harness (Agent 6) against the running app
+## demo: run the eval harness (Agent 6) against the running app. Runs as a module
+## (`-m eval.run`) so `eval` is importable from /app, and mounts the host `test/`
+## tree (excluded from the image) so the golden ground-truth is available.
 demo:
-	$(APP_RUN) python eval/run.py
+	$(COMPOSE) run --rm -v "$(PWD)/test:/app/test" app python -m eval.run
 
 ## test: the product test suite (unit + DB-gated integration)
 test:

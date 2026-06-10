@@ -15,10 +15,17 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from helixpay.query.engine import HelixQueryEngine, build_default_engine
 
-__all__ = ["HelixQueryEngine", "build_default_engine"]
+__all__ = ["HelixQueryEngine", "build_default_engine", "build_engine"]
 
 
 def __getattr__(name: str) -> Any:
+    # Integration alias: the eval harness (SP_007) resolves the engine factory at run
+    # time as ``helixpay.query.build_engine(repo)``. Expose it as an alias of the
+    # canonical ``build_default_engine`` so the cross-agent seam binds without forking.
+    if name == "build_engine":
+        from helixpay.query import engine
+
+        return engine.build_default_engine
     if name in __all__:
         from helixpay.query import engine
 
