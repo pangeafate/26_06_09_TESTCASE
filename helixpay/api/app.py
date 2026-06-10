@@ -11,6 +11,8 @@ engine or ``load_config()``, so it is safe as a compose healthcheck without LLM 
 
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -19,8 +21,30 @@ from pydantic import BaseModel
 
 from helixpay.contracts import AnswerBundle, Contradiction
 from helixpay.api._dates import parse_as_of
-from helixpay.api.engine import get_engine
+from helixpay.api.engine import get_engine, set_engine
 from helixpay.mcp.server import build_mcp
+
+log = logging.getLogger("helixpay.api")
+
+
+def wire_engine() -> None:
+    """Swap the default ``MockQueryEngine`` for Agent 3's real ``HelixQueryEngine``
+    when a database is configured. Gated on ``DATABASE_URL`` so a keyless/DB-less run
+    (local dev, unit tests, the ``/health`` probe) keeps the deterministic mock. The
+    Voyage/Anthropic seams inside the real engine read their keys lazily on first use,
+    so building it here is import- and key-safe — only a reachable DB is required.
+    """
+    if not os.environ.get("DATABASE_URL"):
+        log.info("DATABASE_URL unset — exposure layer using MockQueryEngine.")
+        return
+    # Lazy imports: keep the DB driver / query stack off the import path for the
+    # mock case so tests and the keyless health probe never load them.
+    from helixpay.db.repository import PostgresRepository
+    from helixpay.query import build_default_engine
+
+    repo = PostgresRepository.from_url()
+    set_engine(build_default_engine(repo))
+    log.info("Wired real HelixQueryEngine over PostgresRepository.")
 
 
 class AskRequest(BaseModel):
@@ -43,7 +67,9 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # The streamable-HTTP session manager must run for the lifetime of the app.
+        # Wire the real engine if a DB is configured (mock otherwise), then run the
+        # streamable-HTTP session manager for the lifetime of the app.
+        wire_engine()
         async with mcp.session_manager.run():
             yield
 
