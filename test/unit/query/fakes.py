@@ -32,9 +32,13 @@ class FakeRepository:
         self.links: list[Link] = []
         self.contradictions: list[Contradiction] = []
         self.citations: dict[int, Citation] = {}  # claim_id -> Citation
+        self.chunk_citations: dict[int, Citation] = {}  # chunk_id -> Citation (SP_009)
+        self.link_citations: dict[int, Citation] = {}  # link_id -> Citation (SP_009)
         self.semantic: list[tuple[Chunk, float]] = []
         self.lexical: list[tuple[Chunk, float]] = []
-        self.org_tree: OrgNode = OrgNode(entity_id=0, name="", children=[], dotted_reports=[])
+        self.org_tree: OrgNode = OrgNode(
+            entity_id=0, name="", children=[], dotted_reports=[]
+        )
         self.vocab: dict[str, str] = {}  # lowercased alias -> canonical key
 
     # -- helpers used by tests ------------------------------------------- #
@@ -47,6 +51,19 @@ class FakeRepository:
 
     def add_alias_for(self, entity_id: int, alias: str) -> None:
         self.aliases[alias.strip().lower()] = entity_id
+
+    def add_link_row(self, link: Link, citation: Optional[Citation] = None) -> int:
+        lid = link.id or (max((x.id or 0 for x in self.links), default=0) + 1)
+        link.id = lid
+        self.links.append(link)
+        if citation is not None:
+            citation.link_id = lid
+            self.link_citations[lid] = citation
+        return lid
+
+    def add_chunk_source(self, chunk_id: int, citation: Citation) -> None:
+        citation.chunk_id = chunk_id
+        self.chunk_citations[chunk_id] = citation
 
     def add_claim_row(self, c: Claim, citation: Optional[Citation] = None) -> int:
         cid = c.id or (max(self.claims) + 1 if self.claims else 1)
@@ -64,27 +81,52 @@ class FakeRepository:
     def search_lexical(self, q: str, k: int) -> list[tuple[Chunk, float]]:
         return self.lexical[:k]
 
-    def get_claims(self, subject_id: int, predicate: Optional[str] = None) -> list[Claim]:
+    def get_claims(
+        self, subject_id: int, predicate: Optional[str] = None
+    ) -> list[Claim]:
         out = [c for c in self.claims.values() if c.subject_entity_id == subject_id]
         if predicate:
             out = [c for c in out if c.predicate == predicate]
         return out
 
-    def get_links(self, link_type: Optional[str] = None) -> list[Link]:
+    def get_links(
+        self,
+        link_type: Optional[str] = None,
+        from_entity_id: Optional[int] = None,
+    ) -> list[Link]:
+        out = list(self.links)
         if link_type:
-            return [link for link in self.links if link.link_type == link_type]
-        return list(self.links)
+            out = [link for link in out if link.link_type == link_type]
+        if from_entity_id is not None:
+            out = [link for link in out if link.from_entity_id == from_entity_id]
+        return out
 
-    def get_org_subtree(self, root_id: Optional[int] = None, as_of: Optional[date] = None) -> OrgNode:
+    def get_org_subtree(
+        self, root_id: Optional[int] = None, as_of: Optional[date] = None
+    ) -> OrgNode:
         return self.org_tree
 
-    def get_contradictions(self, subject_id: Optional[int] = None) -> list[Contradiction]:
+    def get_contradictions(
+        self, subject_id: Optional[int] = None
+    ) -> list[Contradiction]:
         if subject_id is None:
             return list(self.contradictions)
         return [c for c in self.contradictions if c.subject_entity_id == subject_id]
 
     def get_sources(self, claim_ids: list[int]) -> list[Citation]:
         return [self.citations[cid] for cid in claim_ids if cid in self.citations]
+
+    def get_chunk_sources(self, chunk_ids: list[int]) -> list[Citation]:
+        return [
+            self.chunk_citations[cid]
+            for cid in chunk_ids
+            if cid in self.chunk_citations
+        ]
+
+    def get_link_sources(self, link_ids: list[int]) -> list[Citation]:
+        return [
+            self.link_citations[lid] for lid in link_ids if lid in self.link_citations
+        ]
 
     def resolve_entity(
         self,
