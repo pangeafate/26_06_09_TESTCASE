@@ -327,3 +327,21 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   2026-04-21". The grader (`eval/run.py`) matches the value's reporting period — a baked-wrong
   as_of in the extraction cache can **only** be fixed by a re-record, never by post-processing
   (this is why the deterministic attribution fixes don't move golden recall at $0).
+- **A named account mentioned with two subject_types mints a duplicate (SP_010 final-mile):** an
+  external account (e.g. `Açaí Express SP`) tagged both `customer` and `other` mints **two**
+  unseeded rows → its bare name is ambiguous → an `owns`-link endpoint resolves to `None` and the
+  link is **dropped** at ingest (and the grader can't resolve it). Fix: seed the account as a
+  `customer` in `roster.py` `_ACCOUNTS` — the SP_019 seeded-snap then collapses every typing onto
+  the one seeded row. Same "seed-it-or-it-can't-resolve" pattern as `Project Confluence`/`CRM
+  migration`. Keep `_ACCOUNTS` to accounts with real ownership/escalation records (blast radius).
+- **Adding a `METRIC_VOCAB` key silently widens `repair.KNOWN_KEYS` (SP_010 final-mile):**
+  `repair.py` builds `KNOWN_KEYS` as *every* vocab key minus `_NON_COMPANY_KEYS`. A new key whose
+  subject is NOT the company (e.g. `top_contributor`, a repo attribute) must be added to
+  `_NON_COMPANY_KEYS` too, or `repair_metric_subject` will re-attribute a metric-typed claim
+  canonicalizing to it onto `HelixPay`. Keep the two in lock-step.
+- **The $0 replay must run from `eval/smoke/` (SP_010 final-mile):** the replay cache keys on the
+  `source_uri` string. `python -m helixpay.ingest.replay replay data` from the repo root walks the
+  **full** corpus (source_uri `data/all-hands…` → cache miss on non-smoke docs). Run it with CWD
+  `eval/smoke` (where `data/` is the 9-doc smoke subset) so source_uris match the cache the smoke
+  harness recorded. `replay` mode uses a `_ConstantEmbedder` (no Voyage) and `ReplayExtractor`
+  (raises on miss) → genuinely $0; `run_smoke.py --record` is NOT $0 (it re-embeds via Voyage).
