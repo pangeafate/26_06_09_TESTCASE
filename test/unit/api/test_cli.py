@@ -38,7 +38,7 @@ def test_ingest_imports_pipeline_lazily(monkeypatch):
 
     fake_pipeline = types.ModuleType("helixpay.ingest.pipeline")
 
-    def fake_run(path):
+    def fake_run(path, **kwargs):  # SP_013: CLI now passes repo=/already_ingested=
         calls["path"] = path
         return {"documents": 3}
 
@@ -50,6 +50,84 @@ def test_ingest_imports_pipeline_lazily(monkeypatch):
     code = main(["ingest", "./data"])
     assert code == 0
     assert calls["path"] == "./data"
+
+
+def test_ingest_wires_already_ingested_and_prints_skipped(monkeypatch, capsys):
+    """SP_013: the CLI builds `already_ingested` from `repo.known_content_hashes()` and
+    threads BOTH it and the repo into pipeline.run, then surfaces the skipped count.
+    The pipeline's skip-before-extract guarantee (zero LLM calls) is covered by the
+    pipeline unit tests (test_already_ingested_skips_embed_and_extract)."""
+    import sys
+    import types
+
+    from helixpay.ingest.pipeline import IngestReport
+
+    captured = {}
+
+    fake_pipeline = types.ModuleType("helixpay.ingest.pipeline")
+
+    def fake_run(path, *, repo=None, already_ingested=None, **kwargs):
+        captured["path"] = path
+        captured["repo"] = repo
+        captured["already_ingested"] = already_ingested
+        return IngestReport(documents=0, skipped_documents=1)
+
+    fake_pipeline.run = fake_run  # type: ignore[attr-defined]
+    fake_pipeline.IngestReport = IngestReport  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "helixpay.ingest", types.ModuleType("helixpay.ingest"))
+    monkeypatch.setitem(sys.modules, "helixpay.ingest.pipeline", fake_pipeline)
+
+    class _FakeRepo:
+        def known_content_hashes(self):
+            return {"h1"}
+
+    monkeypatch.setattr(
+        "helixpay.db.repository.PostgresRepository.from_url",
+        classmethod(lambda cls: _FakeRepo()),
+    )
+
+    code = main(["ingest", "./data"])
+    out = capsys.readouterr().out
+    assert code == 0
+    # the same repo is handed to the pipeline (single connection, no dual build)
+    assert isinstance(captured["repo"], _FakeRepo)
+    # already_ingested is the membership test over the DB's known hashes
+    pred = captured["already_ingested"]
+    assert callable(pred) and pred("h1") is True and pred("not-seen") is False
+    # the skipped count is observable in the summary
+    assert "skipped 1" in out
+
+
+def test_ingest_degrades_to_full_ingest_when_db_unavailable(monkeypatch, capsys):
+    """If the DB can't be reached, idempotency is skipped (already_ingested=None) and a
+    full ingest is still attempted — the CLI never crashes on the optimisation path."""
+    import sys
+    import types
+
+    captured = {}
+
+    fake_pipeline = types.ModuleType("helixpay.ingest.pipeline")
+
+    def fake_run(path, *, repo=None, already_ingested=None, **kwargs):
+        captured["already_ingested"] = already_ingested
+        captured["repo"] = repo
+        return {"documents": 1}
+
+    fake_pipeline.run = fake_run  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "helixpay.ingest", types.ModuleType("helixpay.ingest"))
+    monkeypatch.setitem(sys.modules, "helixpay.ingest.pipeline", fake_pipeline)
+
+    def _boom(cls):
+        raise RuntimeError("no DATABASE_URL")
+
+    monkeypatch.setattr(
+        "helixpay.db.repository.PostgresRepository.from_url", classmethod(_boom)
+    )
+
+    code = main(["ingest", "./data"])
+    assert code == 0
+    assert captured["already_ingested"] is None
+    assert captured["repo"] is None
 
 
 def test_cli_module_does_not_import_ingest_at_module_level(monkeypatch):

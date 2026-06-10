@@ -13,30 +13,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: the governance validators resolve the active sprint and the
-          # doc-freshness diff base from git log (commit subjects + the plan-introducing
-          # commit's parent). A shallow (depth-1) checkout breaks both — it makes the
-          # gateway diff every meta-doc against the empty tree and mis-resolve the active
-          # sprint — so CI diverges from the local gateway. Fetch everything.
+          # Full history: the doc-freshness/sprint validators resolve the active
+          # sprint and diff-base from git history (need HEAD^ and prior commits).
+          # A shallow (depth-1) clone makes resolve_diff_base fall back to the
+          # empty-tree base, mis-scoping every meta-doc into range → false F-4
+          # "bumped backwards" failures. fetch-depth: 0 makes CI match local.
           fetch-depth: 0
 
-      - name: Set up Python
+      # --- uv path: the project declares deps in pyproject.toml (this repo). uv
+      #     creates the venv and installs the project + the `dev` extra (pytest, mypy)
+      #     reproducibly from uv.lock. The gateway shells `sys.executable -m pytest`,
+      #     so it MUST run under `uv run` (below) for that interpreter to be the venv.
+      - name: Set up uv
+        if: hashFiles('pyproject.toml') != ''
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync Python dependencies (uv)
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync --extra dev
+
+      # --- Fallback path: no pyproject → keep the original setup-python + optional
+      #     requirements.txt behavior so this workflow stays a generic backstop.
+      - name: Set up Python (fallback)
+        if: hashFiles('pyproject.toml') == ''
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: Install Python dependencies if declared
+      - name: Install Python dependencies if declared (requirements.txt fallback)
+        if: hashFiles('pyproject.toml') == '' && hashFiles('requirements.txt') != ''
         run: |
-          if [ -f requirements.txt ]; then
-            python -m pip install --upgrade pip
-            python -m pip install -r requirements.txt
-          elif [ -f pyproject.toml ]; then
-            # This project declares deps in pyproject ([project] + the `dev` extra:
-            # pytest/mypy). Without this the gateway's python-tests step dies on
-            # `No module named pytest`. Editable install so the gateway runs against the tree.
-            python -m pip install --upgrade pip
-            python -m pip install -e ".[dev]"
-          fi
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Install Node dependencies if declared
         run: |
@@ -48,10 +58,15 @@ jobs:
 
       - name: Run local development gateway
         run: |
+          if [ -f pyproject.toml ]; then
+            RUN="uv run python"
+          else
+            RUN="python3"
+          fi
           if [ -f scripts/dev-gateway.py ]; then
-            python3 scripts/dev-gateway.py . --stage ci
+            $RUN scripts/dev-gateway.py . --stage ci
           elif [ -f validators/run_all.py ]; then
-            python3 validators/run_all.py .
+            $RUN validators/run_all.py .
           else
             echo "No local gateway or validators found."
             exit 1
