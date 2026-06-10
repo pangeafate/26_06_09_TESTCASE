@@ -54,9 +54,11 @@ _SCALE = {
 # A bare "r" is deliberately NOT stripped (it would mangle text values like "revenue").
 _CURRENCY = re.compile(r"\br\$|\b(?:sgd|usd|brl|eur|myr|gbp|jpy)\b|[$€£¥₹]", re.IGNORECASE)
 
-# Approx markers: the ~/≈ symbols and a small set of hedge words.
+# Approx markers: the ~/≈ symbols and a small set of hedge words. Note: the bare
+# abbreviation "est" is deliberately NOT here — it would strip the Latin "est." from a
+# founding-year value ("est. 2015" → ". 2015"); "estimated" already covers the intent.
 _APPROX = re.compile(
-    r"~|≈|\b(?:approx(?:imately)?|about|around|circa|roughly|est|estimated)\b",
+    r"~|≈|\b(?:approx(?:imately)?|about|around|circa|roughly|estimated)\b",
     re.IGNORECASE,
 )
 

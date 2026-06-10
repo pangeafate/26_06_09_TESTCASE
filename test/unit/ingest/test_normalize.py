@@ -119,6 +119,14 @@ def test_approx_words_strip():
     assert values_conflict("approx 18", "18") is False
 
 
+def test_est_abbreviation_is_not_an_approx_marker():
+    # "est." (Latin "established") must NOT be stripped as an approx hedge — that would
+    # mangle a founding-year value. It stays in the text and parses as non-numeric.
+    text, num = normalize_value("est. 2015")
+    assert num is None and "2015" in text and text.startswith("est")
+    assert values_conflict("est. 2015", "2015") is True
+
+
 # --------------------------------------------------------------------------- #
 # sign / percent / unicode-minus
 # --------------------------------------------------------------------------- #

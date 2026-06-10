@@ -218,6 +218,7 @@ def test_get_link_sources_returns_anchored_citation(pg_repo):
     cites = pg_repo.get_link_sources([link_id])
     assert len(cites) == 1
     assert cites[0].link_id == link_id          # anchored back to the link
+    assert cites[0].claim_id is None            # link citation, never a claim anchor
     assert cites[0].source_uri == "data/dash.html"
     assert cites[0].as_of == date(2026, 3, 31)
     assert cites[0].snippet                      # chunk-text prefix
