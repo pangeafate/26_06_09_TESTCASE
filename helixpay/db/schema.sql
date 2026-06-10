@@ -146,3 +146,32 @@ CREATE TABLE IF NOT EXISTS contradictions (
     UNIQUE (claim_a_id, claim_b_id)
 );
 CREATE INDEX IF NOT EXISTS contradictions_subject_idx ON contradictions (subject_entity_id);
+
+-- --------------------------------------------------------------------------- --
+-- Provenance v2 (SP_009) — additive, backward-compatible amendment. Every
+-- statement is idempotent (ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS) and
+-- the migrate splitter is comment-safe ONLY when comments sit on their own line above
+-- the statement (never inline on the DDL line) with no DEFAULT clauses and no
+-- dollar-quoted bodies. Foreign keys are declared inline on ADD COLUMN (a separate
+-- ADD CONSTRAINT has no IF NOT EXISTS and would throw on re-run).
+-- --------------------------------------------------------------------------- --
+
+-- Claims carry the verbatim grounding span + its offsets into the source chunk text.
+-- Non-key payload only: the claims_natural_key index above is untouched.
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS evidence TEXT;
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS char_start INT;
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS char_end INT;
+
+-- Links mirror claims so relationship provenance is a direct document join.
+ALTER TABLE links ADD COLUMN IF NOT EXISTS document_id BIGINT REFERENCES documents(id);
+
+-- Contradictions can pair two links (graph conflicts), not just two claims.
+ALTER TABLE contradictions ADD COLUMN IF NOT EXISTS link_a_id BIGINT REFERENCES links(id);
+ALTER TABLE contradictions ADD COLUMN IF NOT EXISTS link_b_id BIGINT REFERENCES links(id);
+-- Link-pair idempotency: the table-level UNIQUE (claim_a_id, claim_b_id) gives NO
+-- protection for link rows (both claim ids are NULL, and NULLs are distinct in a UNIQUE
+-- constraint). A partial unique index on the order-normalized link pair makes re-running
+-- graph contradiction detection a no-op. LEAST/GREATEST mirror add_contradiction's sort.
+CREATE UNIQUE INDEX IF NOT EXISTS contradictions_link_pair
+    ON contradictions (LEAST(link_a_id, link_b_id), GREATEST(link_a_id, link_b_id))
+    WHERE link_a_id IS NOT NULL AND link_b_id IS NOT NULL;

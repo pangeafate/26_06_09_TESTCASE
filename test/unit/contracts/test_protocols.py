@@ -12,6 +12,8 @@ _REPOSITORY_METHODS = {
     "add_claim", "supersede_claim", "add_link", "add_contradiction", "canonical_predicate",
     "search_semantic", "search_lexical", "get_claims", "get_links", "get_org_subtree",
     "get_contradictions", "get_sources",
+    # SP_009 provenance-v2 additions
+    "get_link_sources", "get_chunk_sources", "known_content_hashes",
 }
 
 
