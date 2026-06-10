@@ -177,6 +177,16 @@ def test_render_contradictions_types_and_attributes():
     assert "[C1]" in block and "[C2]" in block  # both sides attributed to markers
 
 
+def test_render_contradictions_skips_one_sided_conflict(repo):
+    # Only one side resolves a grounding marker (claim 10 present; claim 99 absent).
+    # A half-attributed line ("[C1] vs") is worse than silence — the conflict still
+    # rides on AnswerBundle.contradictions. So the block must be empty here.
+    claims = [_claim(10, "revenue", "14.2M")]
+    _, facts = build_grounding(claims, [])
+    con = Contradiction(id=1, predicate="revenue", claim_a_id=10, claim_b_id=99, kind="value_conflict")
+    assert render_contradictions([(con, "value")], facts) == ""
+
+
 def test_renderers_empty_when_nothing_to_show():
     _, facts = build_grounding([], [])
     assert render_consensus([], facts) == ""

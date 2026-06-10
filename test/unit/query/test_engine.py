@@ -310,3 +310,17 @@ def test_ask_cites_a_relationship_link(repo):
     bundle = eng.ask("Who does Bob report to?")
     assert any(c.link_id == 3 for c in bundle.citations)
     assert eng.last_trace["cited_link_ids"] == [3]
+
+
+def test_gather_links_surfaces_link_contradiction_side_on_other_entity(repo):
+    # Review H2: a link-pair contradiction's two links can hang off DIFFERENT entities.
+    # The conflicting link (id 6, from entity 7) is not reachable via the subject's
+    # from_entity_id, so it must be resolved by link id — else the synthesizer is told
+    # a conflict exists but is never given the second side to attribute.
+    bob = repo.add_entity(Entity(canonical_name="Bob", entity_type="person"))
+    repo.add_link_row(Link(id=5, from_entity_id=bob, to_entity_id=2, link_type="reports_to"))
+    repo.add_link_row(Link(id=6, from_entity_id=7, to_entity_id=3, link_type="reports_to"))
+    con = Contradiction(id=1, subject_entity_id=bob, link_a_id=5, link_b_id=6,
+                        kind="source_disagreement")
+    links = _engine(repo)._gather_links([bob], [con])
+    assert {ln.id for ln in links} == {5, 6}   # both sides surfaced despite link 6 off entity 7

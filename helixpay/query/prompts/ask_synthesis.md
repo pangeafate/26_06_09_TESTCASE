@@ -34,4 +34,5 @@ Question:
 Facts:
 {grounding}
 
-Return JSON: {"sentences": [{"text": "...", "cites": ["C1", ...]}], "confidence": 0.0-1.0}.
+Return JSON: {"sentences": [{"text": "...", "cites": ["C1", "S2", "L1"]}], "confidence": 0.0-1.0}.
+(`cites` may mix any resolving markers — claim `C#`, source `S#`, relationship `L#`.)

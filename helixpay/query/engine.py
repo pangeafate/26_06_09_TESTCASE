@@ -175,21 +175,35 @@ class HelixQueryEngine:
     def _gather_links(
         self, subject_ids: list[int], relevant: list[Contradiction]
     ) -> list["Link"]:
-        """Relationship facts for grounding: links out of each resolved subject, plus the
-        links of any subject named in a link-contradiction (so both sides of a graph
-        conflict become citeable ``[L#]`` markers). Deduped by id, ordered, capped."""
-        from_ids: set[int] = set(subject_ids)
+        """Relationship facts for grounding: links out of each resolved subject, PLUS the
+        exact links named by every relevant link-contradiction so both sides become
+        citeable ``[L#]`` markers. Deduped by id, ordered, capped — but a
+        contradiction-side link is never dropped by the cap (else the synthesizer is told
+        a conflict exists but cannot attribute it). Review H2: the conflicting links may
+        hang off *different* entities than the subject, so they must be resolved by link
+        id, not only by ``from_entity_id``."""
+        needed: set[int] = set()
         for con in relevant:
-            if (con.link_a_id is not None or con.link_b_id is not None) and (
-                con.subject_entity_id is not None
-            ):
-                from_ids.add(con.subject_entity_id)
+            for lid in (con.link_a_id, con.link_b_id):
+                if lid is not None:
+                    needed.add(lid)
         by_id: dict[int, "Link"] = {}
-        for sid in from_ids:
+        for sid in subject_ids:
             for link in self.repo.get_links(from_entity_id=sid):
                 if link.id is not None:
                     by_id[link.id] = link
-        return [by_id[i] for i in sorted(by_id)][:_MAX_LINKS]
+        # Pull any contradiction-side link not already gathered — its from-entity is
+        # unknown (no get_link(id) on the Protocol), so scan all links once, only when a
+        # needed side is actually missing.
+        if needed - by_id.keys():
+            for link in self.repo.get_links():
+                if link.id in needed and link.id not in by_id:
+                    by_id[link.id] = link
+        sides = sorted(i for i in by_id if i in needed)
+        others = [i for i in sorted(by_id) if i not in needed]
+        budget = max(0, _MAX_LINKS - len(sides))
+        kept = sorted(set(sides) | set(others[:budget]))
+        return [by_id[i] for i in kept]
 
     def _gather_claim_facts(
         self, subject_ids: list[int], relevant: list[Contradiction]

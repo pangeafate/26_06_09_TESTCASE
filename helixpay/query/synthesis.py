@@ -155,14 +155,16 @@ def render_consensus(
     ]
     for g in groups:
         cons = ", ".join(cmap[i] for i in g.member_ids if i in cmap)
-        line = f"- {g.predicate}: {g.consensus_value} — {g.corroborating_count} source(s) agree"
+        cval = g.consensus_value if g.consensus_value is not None else "(no stated value)"
+        line = f"- {g.predicate}: {cval} — {g.corroborating_count} source(s) agree"
         if g.freshest_as_of is not None:
             line += f", freshest {g.freshest_as_of.isoformat()}"
         if cons:
             line += f" [{cons}]"
         for d in g.dissent:
             dm = ", ".join(cmap[i] for i in d.claim_ids if i in cmap)
-            line += f"; dissent: {d.value}" + (f" [{dm}]" if dm else "")
+            dval = d.value if d.value is not None else "(no stated value)"
+            line += f"; dissent: {dval}" + (f" [{dm}]" if dm else "")
         lines.append(line)
     return "\n".join(lines)
 
@@ -189,16 +191,16 @@ def render_contradictions(
         b = (cmap.get(c.claim_b_id) if c.claim_b_id is not None else None) or (
             lmap.get(c.link_b_id) if c.link_b_id is not None else None
         )
-        refs = " vs ".join(f"[{m}]" for m in (a, b) if m)
-        if not refs:
-            # Neither side is present as a grounding marker — emitting "<type> conflict:"
-            # with nothing to cite would invite an uncited assertion. The conflict still
-            # rides on AnswerBundle.contradictions (surfaced, not hidden); we just don't
-            # ask the model to narrate one it cannot attribute.
+        if not (a and b):
+            # Require BOTH sides to resolve to a grounding marker. A one-sided line
+            # ("X conflict: [C1] vs") would have the model narrate a conflict it can only
+            # half-attribute — worse than silence. The conflict still rides on
+            # AnswerBundle.contradictions (surfaced, never hidden); we just don't prompt
+            # the model to narrate one it cannot attribute on both sides.
             continue
         pred = f" on {c.predicate}" if c.predicate else ""
         note = f" — {c.note}" if c.note else ""
-        lines.append(f"- {label} conflict{pred}: {refs}{note}".rstrip())
+        lines.append(f"- {label} conflict{pred}: [{a}] vs [{b}]{note}".rstrip())
     if len(lines) <= 2:  # only the header rows — nothing attributable
         return ""
     return "\n".join(lines)
