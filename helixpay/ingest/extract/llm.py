@@ -6,6 +6,16 @@ The real Anthropic client (``claude-sonnet-4-6``) is built lazily, so the unit s
 with neither the ``anthropic`` package installed nor ``ANTHROPIC_API_KEY`` set — tests
 inject a stub ``LLMClient``. Every call logs its prompt name and validate/repair outcome
 (spec §8 observability) without logging secrets or raw chunk bodies.
+
+SP_014 changes:
+- Raised ``_MAX_TOKENS`` 4096 → 8192 (covers dense chunks without truncation).
+- Added ``GenerationResult`` dataclass carrying ``text`` and ``stop_reason``.
+- Added optional ``generate_with_meta`` duck-typing seam on clients; ``AnthropicClient``
+  implements it. The original ``LLMClient`` Protocol (``generate → str``) is unchanged
+  so existing test stubs keep working.
+- ``call_structured`` now returns ``StructuredResult[T]`` with ``.value`` and
+  ``.truncated`` instead of bare ``Optional[T]``. ``.truncated`` is True when any LLM
+  call in the attempt had ``stop_reason == "max_tokens"``.
 """
 
 from __future__ import annotations
@@ -13,7 +23,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional, Protocol, TypeVar, runtime_checkable
+from dataclasses import dataclass
+from typing import Generic, Optional, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
 
@@ -23,13 +34,49 @@ log = logging.getLogger("helixpay.ingest.extract.llm")
 
 T = TypeVar("T", bound=BaseModel)
 
-_MAX_TOKENS = 4096
+_MAX_TOKENS = 8192  # SP_014: raised from 4096 to reduce truncation on dense chunks
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Public data types
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class GenerationResult:
+    """One LLM generation turn: the text output and the stop reason if available."""
+
+    text: str
+    stop_reason: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class StructuredResult(Generic[T]):
+    """The outcome of ``call_structured``.
+
+    ``value``     The validated schema instance, or ``None`` if the model output was
+                  undecodable even after one repair attempt.
+    ``truncated`` True if any generation call in this attempt had
+                  ``stop_reason == "max_tokens"``.  Callers (e.g. ``ChunkExtractor``)
+                  use this to count/log the event — the actual response handling
+                  (count, surface, optionally recover) lives in the extractor.
+    """
+
+    value: Optional[T]
+    truncated: bool = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Client protocols
+# ─────────────────────────────────────────────────────────────────────────────
+
 @runtime_checkable
 class LLMClient(Protocol):
-    """The slice of an LLM we depend on. Returns the model's text for one turn."""
+    """The slice of an LLM we depend on. Returns the model's text for one turn.
+
+    This interface is UNCHANGED from pre-SP_014; existing test stubs that implement
+    only ``generate(...)`` continue to work.
+    """
 
     def generate(self, *, system: str, user: str, max_tokens: int) -> str: ...
 
@@ -51,6 +98,11 @@ class AnthropicClient:
         return self._client
 
     def generate(self, *, system: str, user: str, max_tokens: int) -> str:
+        result = self.generate_with_meta(system=system, user=user, max_tokens=max_tokens)
+        return result.text
+
+    def generate_with_meta(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
+        """Extended seam that surfaces the stop_reason alongside the text."""
         resp = self.client.messages.create(  # type: ignore[attr-defined]
             model=self.model,
             max_tokens=max_tokens,
@@ -58,8 +110,15 @@ class AnthropicClient:
             messages=[{"role": "user", "content": user}],
         )
         parts = [block.text for block in resp.content if getattr(block, "type", None) == "text"]
-        return "".join(parts)
+        return GenerationResult(
+            text="".join(parts),
+            stop_reason=getattr(resp, "stop_reason", None),
+        )
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _extract_json_object(text: str) -> str:
     """Pull a JSON object out of a model response that may be fenced or prose-wrapped."""
@@ -94,6 +153,28 @@ def _repair_user(original_user: str, bad_output: str, error: str) -> str:
     )
 
 
+def _generate(client: LLMClient, *, system: str, user: str, max_tokens: int) -> GenerationResult:
+    """Unified generation helper: use generate_with_meta if available, else wrap generate.
+
+    This is the single dispatch point so all callers get a GenerationResult regardless
+    of which client is injected.  The parameter type is ``LLMClient`` (the Protocol)
+    so that mypy knows ``.generate`` is valid; duck-typed clients with
+    ``generate_with_meta`` are detected at runtime via ``hasattr``.
+    """
+    if hasattr(client, "generate_with_meta"):
+        # cast to Any to satisfy mypy — the hasattr guard ensures the method exists
+        import typing  # noqa: PLC0415
+        meta_client = typing.cast(typing.Any, client)
+        return meta_client.generate_with_meta(system=system, user=user, max_tokens=max_tokens)
+    # Fall back to the LLMClient protocol (generate → str)
+    text = client.generate(system=system, user=user, max_tokens=max_tokens)
+    return GenerationResult(text=text, stop_reason=None)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────────────────────────────────────
+
 def call_structured(
     client: LLMClient,
     *,
@@ -103,36 +184,58 @@ def call_structured(
     schema: type[T],
     repair: bool = True,
     max_tokens: int = _MAX_TOKENS,
-) -> Optional[T]:
+) -> StructuredResult[T]:
     """Call the LLM and validate its output against ``schema``. On failure, make exactly
     one repair attempt that feeds the validation error back; if that still fails, drop the
-    result (returns ``None``) and log it. Never returns unvalidated output.
+    result (returns ``StructuredResult(value=None)``) and log it.  Never returns
+    unvalidated output.
+
+    Returns a ``StructuredResult[T]`` whose ``.truncated`` flag is True if any generation
+    call in this attempt had ``stop_reason == "max_tokens"``.
     """
-    raw = client.generate(system=system, user=user, max_tokens=max_tokens)
+    any_truncated = False
+
+    result = _generate(client, system=system, user=user, max_tokens=max_tokens)
+    if result.stop_reason == "max_tokens":
+        any_truncated = True
+    raw = result.text
+
     parsed, error = _try_parse(raw, schema)
     if parsed is not None:
         log.info("llm structured-output ok", extra={"prompt": prompt_name, "outcome": "ok"})
-        return parsed
+        return StructuredResult(value=parsed, truncated=any_truncated)
 
     if not repair:
         log.warning(
             "llm structured-output dropped (no repair)",
             extra={"prompt": prompt_name, "outcome": "drop", "error": error},
         )
-        return None
+        return StructuredResult(value=None, truncated=any_truncated)
 
     log.info("llm structured-output repair", extra={"prompt": prompt_name, "outcome": "repair", "error": error})
-    repaired_raw = client.generate(system=system, user=_repair_user(user, raw, error or ""), max_tokens=max_tokens)
+    repair_result = _generate(
+        client, system=system, user=_repair_user(user, raw, error or ""), max_tokens=max_tokens
+    )
+    if repair_result.stop_reason == "max_tokens":
+        any_truncated = True
+    repaired_raw = repair_result.text
+
     parsed, error2 = _try_parse(repaired_raw, schema)
     if parsed is not None:
         log.info("llm structured-output ok after repair", extra={"prompt": prompt_name, "outcome": "repaired"})
-        return parsed
+        return StructuredResult(value=parsed, truncated=any_truncated)
 
     log.warning(
         "llm structured-output dropped after repair",
         extra={"prompt": prompt_name, "outcome": "drop", "error": error2},
     )
-    return None
+    return StructuredResult(value=None, truncated=any_truncated)
 
 
-__all__ = ["LLMClient", "AnthropicClient", "call_structured"]
+__all__ = [
+    "LLMClient",
+    "AnthropicClient",
+    "GenerationResult",
+    "StructuredResult",
+    "call_structured",
+]

@@ -26,9 +26,12 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
 - `object_value`: the value **exactly as written**, including units and currency
   (`"SGD 14.2M"`, `"47"`, `"412"`, `"end of June"`). Keep the as-of date attached to the
   number it belongs to.
-- `as_of`: the date this value is true *as of*, `YYYY-MM-DD`. Use the value's own date
-  when the text gives one (dashboards stamp an "As of" date; tables say "Q1 2026");
-  otherwise fall back to the document as_of above. Omit only if truly undated.
+- `as_of`: the date this value is true *as of*, **always `YYYY-MM-DD`**. When the text
+  gives a quarter (e.g. "Q1 2026"), emit the quarter-**end** date directly:
+  Q1→`YYYY-03-31`, Q2→`YYYY-06-30`, Q3→`YYYY-09-30`, Q4→`YYYY-12-31`
+  (e.g. "Q1 2026" → `2026-03-31`). A bare year "2026" → `2026-12-31`.
+  Use the value's own date first; fall back to the document as_of only if the value
+  names no date of its own. Omit only if truly undated.
 - `confidence`: 0.0–1.0, how clearly the span states this.
 - `evidence`: a **verbatim** quote copied from this span that contains the value (do not
   paraphrase the number — copy it exactly; this span is checked against the source).

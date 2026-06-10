@@ -1,6 +1,6 @@
 """Per-chunk extraction: render the named prompt, call the LLM under the structured-output
-repair loop, then validate each candidate item against the strict contract schemas and drop
-the ones that don't fit (the rest survive).
+repair loop, then coerce + validate each candidate item against the strict contract schemas
+and drop the ones that don't fit (the rest survive).
 
 Two research-validated quality steps wrap the base extraction:
 
@@ -15,6 +15,15 @@ Two research-validated quality steps wrap the base extraction:
   dashboard facts whose value/label/as-of live in separate spans).
 
 Hypothetical/counterfactual values are dropped so they never become competing facts.
+
+SP_014 changes:
+- ``ChunkExtractor.__init__`` gains an optional ``ledger: LossLedger`` parameter (default:
+  fresh LossLedger per instance).
+- ``_run_pass`` now returns ``tuple[Optional[ExtractionOut], bool]`` = (out, truncated)
+  and calls ``coerce_item`` on each raw item before strict validation (replaces the old
+  ``_validate_items`` which did not coerce).
+- ``extract`` records all loss counters via the ledger.
+- Hypothetical drops are counted via ``ledger.record_drop(..., "hypothetical")``.
 """
 
 from __future__ import annotations
@@ -22,12 +31,14 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional, Type
 
 from pydantic import ValidationError
 
 from helixpay.contracts import Chunk
+from helixpay.ingest.extract.coerce import coerce_item
 from helixpay.ingest.extract.grounding import GRADE_UNGROUNDED, grade
+from helixpay.ingest.extract.ledger import LossLedger
 from helixpay.ingest.extract.llm import LLMClient, call_structured
 from helixpay.ingest.extract.prompts import render
 from helixpay.ingest.extract.schemas import ClaimOut, ExtractionOut, RawExtraction, RelationOut
@@ -68,6 +79,7 @@ class ChunkExtractor:
         repair: bool = True,
         glean_passes: int = 0,
         glean_token_budget: int = _DEFAULT_GLEAN_TOKEN_BUDGET,
+        ledger: Optional[LossLedger] = None,
     ) -> None:
         if glean_passes < 0:
             raise ValueError("glean_passes must be >= 0")
@@ -77,16 +89,33 @@ class ChunkExtractor:
         self.repair = repair
         self.glean_passes = glean_passes
         self.glean_token_budget = glean_token_budget
+        self.ledger: LossLedger = ledger if ledger is not None else LossLedger()
 
     def extract(self, chunk: Chunk, ctx: ChunkContext) -> ExtractionOut:
-        base = self._run_pass(self.prompt_name, chunk, ctx, already=None)
+        self.ledger.record_chunk(ctx.source_uri)
+
+        base, truncated = self._run_pass(self.prompt_name, chunk, ctx, already=None)
         if base is None:
-            return ExtractionOut()  # undecodable even after repair (logged in call_structured)
+            self.ledger.record_empty(ctx.source_uri)
+            log.warning(
+                "extraction empty (undecodable after repair)",
+                extra={
+                    "source_uri": ctx.source_uri,
+                    "ordinal": chunk.ordinal,
+                    "truncated": truncated,
+                },
+            )
+            return ExtractionOut()
         claims, relations = list(base.claims), list(base.relations)
 
         self._glean(chunk, ctx, claims, relations)
 
-        kept = [c for c in claims if not c.hypothetical]
+        kept = []
+        for c in claims:
+            if c.hypothetical:
+                self.ledger.record_drop(ctx.source_uri, "hypothetical")
+            else:
+                kept.append(c)
         dropped_hypo = len(claims) - len(kept)
         if dropped_hypo:
             log.info(
@@ -119,7 +148,7 @@ class ChunkExtractor:
             if self._estimate_tokens(chunk.text + already) > self.glean_token_budget:
                 log.info("glean skipped: over token budget", extra={"source_uri": ctx.source_uri, "ordinal": chunk.ordinal})
                 return
-            extra_out = self._run_pass(_GLEAN_PROMPT, chunk, ctx, already=already)
+            extra_out, _ = self._run_pass(_GLEAN_PROMPT, chunk, ctx, already=already)
             if extra_out is None:
                 return  # bad gleaning pass — keep what we have, never discard the base pass
             added = False
@@ -140,9 +169,13 @@ class ChunkExtractor:
 
     def _run_pass(
         self, prompt_name: str, chunk: Chunk, ctx: ChunkContext, *, already: Optional[str]
-    ) -> Optional[ExtractionOut]:
-        """Render + call + per-item validate one pass. Returns an ``ExtractionOut`` of valid
-        items, or ``None`` if the model output was undecodable even after repair."""
+    ) -> tuple[Optional[ExtractionOut], bool]:
+        """Render + call + coerce + per-item validate one pass.
+
+        Returns ``(ExtractionOut, truncated)`` where truncated reflects whether the LLM
+        call hit max_tokens.  Returns ``(None, truncated)`` if the model output was
+        undecodable even after repair.
+        """
         kwargs = dict(
             source_type=ctx.source_type,
             source_uri=ctx.source_uri,
@@ -153,15 +186,59 @@ class ChunkExtractor:
         if already is not None:
             kwargs["already_extracted"] = already
         user = render(prompt_name, **kwargs)
-        raw = call_structured(
+        res = call_structured(
             self.client, prompt_name=prompt_name, system=self.system, user=user,
             schema=RawExtraction, repair=self.repair,
         )
-        if raw is None:
-            return None
-        claims = self._validate_items(raw.claims, ClaimOut, ctx.source_uri, "claim")
-        relations = self._validate_items(raw.relations, RelationOut, ctx.source_uri, "relation")
-        return ExtractionOut(claims=claims, relations=relations)
+        if res.truncated:
+            self.ledger.record_truncated(ctx.source_uri)
+        if res.value is None:
+            return None, res.truncated
+        claims = self._coerce_and_validate(res.value.claims, ClaimOut, "claim", ctx)
+        relations = self._coerce_and_validate(res.value.relations, RelationOut, "relation", ctx)
+        return ExtractionOut(claims=claims, relations=relations), res.truncated
+
+    def _coerce_and_validate(
+        self,
+        raw_items: list[dict],  # noqa: unparameterised dict is fine here
+        schema: Any,
+        kind: str,
+        ctx: ChunkContext,
+    ) -> list[Any]:
+        """Coerce then strictly validate each raw item; drop and count failures.
+
+        Replaces the old ``_validate_items`` with a coerce-before-validate step that
+        normalises the model's natural emissions (quarter as_of, link verb synonyms, entity
+        noun synonyms) before the strict Pydantic check.
+        """
+        out = []
+        for raw_item in raw_items:
+            self.ledger.record_emitted(ctx.source_uri)
+            coerced = coerce_item(raw_item, kind=kind)
+            if coerced.item is None:
+                # Dropped by coercion (unmappable_enum or unparseable_as_of)
+                for ck in coerced.coercions:
+                    self.ledger.record_coerced(ctx.source_uri, ck)
+                self.ledger.record_drop(ctx.source_uri, coerced.drop_reason or "unmappable_enum")
+                log.warning(
+                    "drop invalid %s item (coerce)",
+                    kind,
+                    extra={"source_uri": ctx.source_uri, "reason": coerced.drop_reason, "kind": kind},
+                )
+                continue
+            # Record any successful coercions before strict validation
+            for ck in coerced.coercions:
+                self.ledger.record_coerced(ctx.source_uri, ck)
+            try:
+                out.append(schema.model_validate(coerced.item))
+            except ValidationError as exc:
+                self.ledger.record_drop(ctx.source_uri, "validation_error")
+                log.warning(
+                    "drop invalid %s item",
+                    kind,
+                    extra={"source_uri": ctx.source_uri, "errors": exc.error_count(), "kind": kind},
+                )
+        return out
 
     @staticmethod
     def _claim_key(c: ClaimOut) -> tuple[str, str, str, str]:
@@ -204,20 +281,6 @@ class ChunkExtractor:
             extra={"source_uri": ctx.source_uri, "subject": claim.subject, "predicate": claim.predicate},
         )
         return claim.model_copy(update={"confidence": penalized})
-
-    @staticmethod
-    def _validate_items(items, schema, source_uri: str, kind: str):
-        out = []
-        for raw_item in items:
-            try:
-                out.append(schema.model_validate(raw_item))
-            except ValidationError as exc:
-                log.warning(
-                    "drop invalid %s item",
-                    kind,
-                    extra={"source_uri": source_uri, "errors": exc.error_count(), "kind": kind},
-                )
-        return out
 
 
 __all__ = ["ChunkExtractor", "ChunkContext"]

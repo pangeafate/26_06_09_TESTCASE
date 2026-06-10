@@ -1,4 +1,4 @@
-"""ChunkExtractor: render named prompt -> LLM -> validated candidates, per-item drop."""
+"""ChunkExtractor: render named prompt -> LLM -> coerce -> validated candidates, per-item drop."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 
 from helixpay.contracts import Chunk
 from helixpay.ingest.extract.extractor import ChunkContext, ChunkExtractor
+from helixpay.ingest.extract.llm import GenerationResult
 
 
 class StubLLM:
@@ -19,6 +20,25 @@ class StubLLM:
         return self._responses.pop(0)
 
 
+class StubLLMWithMeta:
+    """Stub that surfaces stop_reason via generate_with_meta."""
+
+    def __init__(self, responses: list[GenerationResult]) -> None:
+        self._responses = list(responses)
+        self.calls: list[tuple[str, str]] = []
+
+    def generate_with_meta(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
+        self.calls.append((system, user))
+        return self._responses.pop(0)
+
+
+# _MIXED fixture:
+# - "HelixPay" ARR claim with valid subject_type "metric" → kept
+# - "Cosmos" arr hypothetical → dropped (hypothetical)
+# - "X" with subject_type "wizard" → dropped (unmappable_enum via coerce)
+# - Sara Wijaya → Daniel Tan reports_to → kept as-is
+# - "a" manages "b" → coerced to reports_to with INVERSION: from=b, to=a → kept
+# Net: 1 claim (ARR), 2 relations (both reports_to)
 _MIXED = json.dumps(
     {
         "claims": [
@@ -37,15 +57,31 @@ _CTX = ChunkContext(source_type="md", source_uri="data/x.md", as_of="2026-03-31"
 
 
 def test_extract_keeps_valid_drops_bad_and_hypothetical(caplog):
+    """SP_014: 'manages' is now COERCED to reports_to (inverted), so both relations survive."""
     llm = StubLLM([_MIXED])
     ex = ChunkExtractor(llm)
     with caplog.at_level(logging.WARNING, logger="helixpay.ingest.extract.extractor"):
         out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
 
-    # valid metric claim kept; bad subject_type dropped; hypothetical dropped
+    # valid metric claim kept; wizard subject_type dropped; hypothetical dropped
     assert [c.predicate for c in out.claims] == ["ARR"]
-    # valid relation kept; bad link_type dropped
-    assert [r.link_type for r in out.relations] == ["reports_to"]
+
+    # Two relations: the original Sara→Daniel and the coerced (inverted) b→a
+    assert len(out.relations) == 2
+    link_types = {r.link_type for r in out.relations}
+    assert link_types == {"reports_to"}
+
+    # The manages-coerced relation must be inverted: from=b, to=a
+    inverted = next(r for r in out.relations if r.from_entity == "b")
+    assert inverted.to_entity == "a"
+    assert inverted.link_type == "reports_to"
+
+    # The original relation must still be there
+    original = next(r for r in out.relations if r.from_entity == "Sara Wijaya")
+    assert original.to_entity == "Daniel Tan"
+    assert original.link_type == "reports_to"
+
+    # Some warnings must still be emitted (for the wizard drop and hypothetical drop)
     assert any("drop" in r.message.lower() for r in caplog.records)
 
 
@@ -171,3 +207,110 @@ def test_grounded_claim_confidence_unchanged():
     ex = ChunkExtractor(StubLLM([good]))
     out = ex.extract(Chunk(document_id=1, ordinal=0, text="revenue was 14.2M"), _CTX)
     assert out.claims[0].confidence == 0.8
+
+
+# --------------------------------------------------------------------------- #
+# SP_014 new tests: coerce, ledger, truncation
+# --------------------------------------------------------------------------- #
+
+def test_q1_as_of_claim_is_retained_after_coerce():
+    """A claim with as_of='Q1 2026' that previously dropped now survives with 2026-03-31."""
+    q1_claim = json.dumps({
+        "claims": [
+            {"subject": "HelixPay", "predicate": "ARR", "object_value": "SGD 14.2M", "as_of": "Q1 2026"}
+        ],
+        "relations": []
+    })
+    llm = StubLLM([q1_claim])
+    ex = ChunkExtractor(llm)
+    out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
+    assert len(out.claims) == 1
+    assert out.claims[0].as_of == "2026-03-31"
+
+
+def test_unmappable_subject_type_is_dropped_and_counted():
+    """subject_type='wizard' drops via coerce and is counted in the ledger."""
+    wizard = json.dumps({
+        "claims": [
+            {"subject": "X", "subject_type": "wizard", "predicate": "p", "object_value": "v"}
+        ],
+        "relations": []
+    })
+    llm = StubLLM([wizard])
+    ex = ChunkExtractor(llm)
+    out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
+    assert out.claims == []
+    uri = _CTX.source_uri
+    assert ex.ledger.per_source[uri].items_dropped >= 1
+    assert ex.ledger.per_source[uri].dropped_by_reason["unmappable_enum"] >= 1
+
+
+def test_ledger_records_chunk_on_extract():
+    """Every call to extract() increments the chunk counter."""
+    llm = StubLLM(['{"claims": [], "relations": []}', '{"claims": [], "relations": []}'])
+    ex = ChunkExtractor(llm)
+    ctx = ChunkContext(source_type="md", source_uri="data/doc.md")
+    ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+    ex.extract(Chunk(document_id=1, ordinal=1, text="body2"), ctx)
+    assert ex.ledger.per_source["data/doc.md"].chunks == 2
+
+
+def test_ledger_records_empty_extraction():
+    """When the LLM is unrecoverable, empty_extractions is incremented."""
+    llm = StubLLM(["not json", "still not json"])
+    ex = ChunkExtractor(llm)
+    ctx = ChunkContext(source_type="md", source_uri="data/empty.md")
+    out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+    assert out.claims == []
+    assert ex.ledger.per_source["data/empty.md"].empty_extractions == 1
+
+
+def test_ledger_records_truncated():
+    """A max_tokens stop increments truncated_calls in the ledger."""
+    truncated_json = '{"claims": [], "relations": []}'
+    llm = StubLLMWithMeta([GenerationResult(text=truncated_json, stop_reason="max_tokens")])
+    ctx = ChunkContext(source_type="md", source_uri="data/dense.md")
+    ex = ChunkExtractor(llm)
+    ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+    assert ex.ledger.per_source["data/dense.md"].truncated_calls == 1
+
+
+def test_ledger_probe_has_frozen_shape():
+    """probe() must emit exactly the three keys per the SP_015 contract."""
+    llm = StubLLM(["not json", "still not json"])
+    ex = ChunkExtractor(llm)
+    ctx = ChunkContext(source_type="md", source_uri="data/x.md")
+    ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+
+    probe = ex.ledger.probe()
+    assert "data/x.md" in probe
+    keys = set(probe["data/x.md"].keys())
+    assert keys == {"empty_extractions", "truncated_calls", "items_dropped"}
+
+
+def test_ledger_hypothetical_drops_are_counted():
+    """Hypothetical claims dropped post-extraction must be recorded in the ledger."""
+    hypo = json.dumps({
+        "claims": [
+            {"subject": "Cosmos", "predicate": "arr", "object_value": "165K", "hypothetical": True},
+            {"subject": "HelixPay", "predicate": "ARR", "object_value": "14.2M"},
+        ],
+        "relations": []
+    })
+    ex = ChunkExtractor(StubLLM([hypo]))
+    ctx = ChunkContext(source_type="md", source_uri="data/h.md")
+    out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+    assert len(out.claims) == 1  # hypothetical dropped
+    assert ex.ledger.per_source["data/h.md"].dropped_by_reason["hypothetical"] == 1
+
+
+def test_injected_ledger_is_used():
+    """A ledger injected at construction time is accumulated into."""
+    from helixpay.ingest.extract.ledger import LossLedger
+    shared = LossLedger()
+    llm = StubLLM(['{"claims": [], "relations": []}'])
+    ex = ChunkExtractor(llm, ledger=shared)
+    ctx = ChunkContext(source_type="md", source_uri="data/shared.md")
+    ex.extract(Chunk(document_id=1, ordinal=0, text="body"), ctx)
+    assert shared.per_source["data/shared.md"].chunks == 1
+    assert ex.ledger is shared

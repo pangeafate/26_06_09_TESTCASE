@@ -25,6 +25,7 @@ from helixpay.contracts import Chunk, Claim, Document, Link, Repository, SourceC
 from helixpay.ingest.contradict import detect, values_conflict
 from helixpay.ingest.embed import VoyageEmbedder
 from helixpay.ingest.extract.extractor import ChunkContext, ChunkExtractor
+from helixpay.ingest.extract.ledger import LossLedger
 from helixpay.ingest.resolve import context_from_source_uri, resolve_mention
 
 log = logging.getLogger("helixpay.ingest.pipeline")
@@ -42,6 +43,7 @@ class IngestReport:
     skipped_documents: int = 0
     dropped_mentions: int = 0
     touched_groups: set[tuple[int, str]] = field(default_factory=set)
+    ledger: Optional[LossLedger] = None
 
 
 class _Embedder(Protocol):  # structural seam for typing/injection
@@ -119,6 +121,14 @@ def run(
     # contradiction sweep over every (subject, predicate) we touched this run
     for subject_id, predicate in report.touched_groups:
         report.contradictions += detect(repo, subject_id, predicate)
+
+    # attach the extraction loss ledger (guarded: stub extractors in unit tests may not
+    # have a .ledger attribute, so getattr keeps test_pipeline.py green without edits)
+    ledger = getattr(ext, "ledger", None)
+    report.ledger = ledger
+    if ledger is not None:
+        log.info("extraction loss ledger", extra={"ledger": ledger.summary()})
+
     log.info(
         "ingest complete",
         extra={
