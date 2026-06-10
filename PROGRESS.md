@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-09
+last-reconciled: 2026-06-10
 authoritative-for: [active-sprint, sprint-history]
 ---
 <!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
@@ -11,13 +11,26 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_008
-**Started:** 2026-06-09
-**Stage:** Complete — Phase 1 integrated on `merge/integration`
+**Current:** SP_011
+**Started:** 2026-06-10
+**Stage:** Complete — provenance produced on the ingest write path (items 1–4); unit-verified.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
-SP_008 — DEV_RULES Reinforcement: implement the `DEV_RULES/DEV_REINFORCE.md`
+SP_011 — Provenance Persist (ingest side): claims now carry the verbatim `evidence`
+span + located char offsets; links carry `document_id`; a graph-contradiction sweep
+(`detect_link_conflicts`, reports_to-only) makes reporting conflicts first-class; seeded
+reporting edges are emitted undated so the cited edge extracted from `org-chart.md`
+coexists (corroborate, not replace). Plan: `workspace/sprints/SP_011_provenance_persist.md`.
+Isolation: `git-worktree` (`sprint/SP_011-provenance-persist`). End-to-end replay-tier
+confirmation over the real corpus is deferred (needs a live DB + recorded cache).
+
+Prior: SP_010 — recall fixes + the $0 replay tier (record once, re-run the post-LLM
+pipeline from cache) + the planted Confluence GA contradiction. SP_009 — provenance
+contracts/schema v2 (evidence/offsets, link `document_id`, link-pair contradictions) +
+the shared `normalize` util.
+
+SP_008 — DEV_RULES Reinforcement: implement the DEV_RULES reinforcement
 findings from the SP_002–SP_007 fan-out (status advisory, orphan-worktree WI-4,
 declared-dependencies field + validator + consolidation script, package-root
 scaffolding practice, env pin, integration-as-owned-phase). Plan:

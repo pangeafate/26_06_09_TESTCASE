@@ -47,17 +47,24 @@ def seed_all(repo: PostgresRepository, data_dir: Path, with_fixture: bool = True
         if canonical in name_to_id:
             repo.add_alias(name_to_id[canonical], alias)
 
-    # 4) reporting hierarchy (solid + dotted) and team membership — stamped as_of
+    # 4) reporting hierarchy (solid + dotted) and team membership.
+    # SP_011: reporting edges are seeded **undated** (as_of=None) so the cited edge that
+    # extraction produces from org-chart.md (stamped with the export date ORG_CHART_AS_OF)
+    # does NOT collide with the seeded one on the links natural key (which keys on
+    # COALESCE(as_of, …)). The seeded edge stays the deterministic org-tree backbone; the
+    # extracted twin coexists and supplies the source_chunk_id (closing the no-provenance
+    # hole) — corroborate, not replace. member_of keeps the export stamp (not corroborated
+    # by extraction here).
     links = 0
     for child, manager in roster.reports_to:
         if child in name_to_id and manager in name_to_id:
             repo.add_link(Link(from_entity_id=name_to_id[child], to_entity_id=name_to_id[manager],
-                               link_type="reports_to", as_of=ORG_CHART_AS_OF, confidence=1.0))
+                               link_type="reports_to", as_of=None, confidence=1.0))
             links += 1
     for a, b in roster.dotted:
         if a in name_to_id and b in name_to_id:
             repo.add_link(Link(from_entity_id=name_to_id[a], to_entity_id=name_to_id[b],
-                               link_type="dotted_line_to", as_of=ORG_CHART_AS_OF, confidence=0.8))
+                               link_type="dotted_line_to", as_of=None, confidence=0.8))
             links += 1
     for person, team in roster.member_of:
         if person in name_to_id and team in name_to_id:

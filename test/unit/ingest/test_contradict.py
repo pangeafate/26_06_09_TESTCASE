@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from helixpay.contracts import Claim, Contradiction
+from helixpay.contracts import Claim, Contradiction, Link
 from helixpay.ingest.contradict import (
     classify,
     detect,
+    detect_link_conflicts,
     normalize_value,
     values_conflict,
 )
@@ -231,3 +232,148 @@ def test_detect_is_idempotent_on_rerun():
     assert detect(repo, 10, "revenue") == 1
     assert detect(repo, 10, "revenue") == 0  # second pass writes nothing new
     assert len(repo.contradictions) == 1  # pair-deduped, not double-counted
+
+
+# --------------------------------------------------------------------------- #
+# Link / graph contradictions (SP_011): two reports_to edges, same from, different
+# manager, overlapping validity → a first-class Contradiction pairing the two LINKS.
+# --------------------------------------------------------------------------- #
+class FakeLinkRepo:
+    """Minimal repo for the link sweep: links + link-pair-deduped contradictions."""
+
+    def __init__(self, links: list[Link]) -> None:
+        self._links = links
+        self.contradictions: list[Contradiction] = []
+
+    def get_links(self, link_type=None, from_entity_id=None):
+        return [
+            l
+            for l in self._links
+            if (link_type is None or l.link_type == link_type)
+            and (from_entity_id is None or l.from_entity_id == from_entity_id)
+        ]
+
+    def get_contradictions(self, subject_id=None):
+        return [
+            c
+            for c in self.contradictions
+            if subject_id is None or c.subject_entity_id == subject_id
+        ]
+
+    def add_contradiction(self, c: Contradiction) -> None:
+        # dedup on the LINK pair (claim ids are None for graph contradictions) — mirrors
+        # the DB partial unique index contradictions_link_pair.
+        if c.link_a_id is None or c.link_b_id is None:
+            self.contradictions.append(c)
+            return
+        key = (min(c.link_a_id, c.link_b_id), max(c.link_a_id, c.link_b_id))
+        if any(
+            x.link_a_id is not None
+            and (min(x.link_a_id, x.link_b_id), max(x.link_a_id, x.link_b_id)) == key
+            for x in self.contradictions
+        ):
+            return
+        self.contradictions.append(c)
+
+
+def _link(lid, from_id, to_id, *, link_type="reports_to", as_of=_Q1, valid_to=None, document_id=1):
+    return Link(
+        id=lid,
+        from_entity_id=from_id,
+        to_entity_id=to_id,
+        link_type=link_type,
+        as_of=as_of,
+        valid_to=valid_to,
+        document_id=document_id,
+    )
+
+
+def test_link_conflict_two_managers_cross_source_fires():
+    repo = FakeLinkRepo([_link(1, 5, 10, document_id=1), _link(2, 5, 11, document_id=2)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 1
+    c = repo.contradictions[0]
+    assert {c.link_a_id, c.link_b_id} == {1, 2}
+    assert c.subject_entity_id == 5 and c.predicate == "reports_to"
+    assert c.claim_a_id is None and c.claim_b_id is None  # a link-pair, not a claim-pair
+    assert c.kind == "source_disagreement"  # different documents
+
+
+def test_link_conflict_same_document_is_value_conflict():
+    repo = FakeLinkRepo([_link(1, 5, 10, document_id=7), _link(2, 5, 11, document_id=7)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 1
+    assert repo.contradictions[0].kind == "value_conflict"  # one source, not a disagreement
+
+
+def test_link_same_manager_is_not_a_conflict():
+    # two sources agreeing on the manager → no conflict
+    repo = FakeLinkRepo([_link(1, 5, 10, document_id=1), _link(2, 5, 10, document_id=2)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+
+
+def test_link_dotted_line_is_never_swept():
+    repo = FakeLinkRepo(
+        [_link(1, 5, 10, link_type="reports_to"), _link(2, 5, 11, link_type="dotted_line_to")]
+    )
+    # the solid group has a single edge → 0; dotted is not allowlisted → 0 (a person with
+    # one solid manager + one functional dotted-line is NOT a contradiction)
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert detect_link_conflicts(repo, 5, "dotted_line_to") == 0
+
+
+def test_link_member_of_is_never_swept():
+    # a person legitimately belongs to multiple teams — member_of is not single-valued
+    repo = FakeLinkRepo(
+        [_link(1, 5, 10, link_type="member_of"), _link(2, 5, 11, link_type="member_of")]
+    )
+    assert detect_link_conflicts(repo, 5, "member_of") == 0
+
+
+def test_link_disjoint_windows_is_succession_not_conflict():
+    # an old CLOSED reporting line + a later OPEN one do not overlap → legitimate manager
+    # change, not a contradiction
+    repo = FakeLinkRepo(
+        [
+            _link(1, 5, 10, as_of=date(2026, 1, 1), valid_to=date(2026, 2, 1)),
+            _link(2, 5, 11, as_of=date(2026, 3, 1), valid_to=None),
+        ]
+    )
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+
+
+def test_link_two_open_lines_overlap_and_fire():
+    # both valid_to=None (still in effect) → open windows overlap → conflict surfaces
+    repo = FakeLinkRepo(
+        [
+            _link(1, 5, 10, as_of=date(2026, 1, 1), valid_to=None, document_id=1),
+            _link(2, 5, 11, as_of=date(2026, 6, 1), valid_to=None, document_id=2),
+        ]
+    )
+    assert detect_link_conflicts(repo, 5, "reports_to") == 1
+
+
+def test_link_conflict_idempotent_on_rerun():
+    repo = FakeLinkRepo([_link(1, 5, 10, document_id=1), _link(2, 5, 11, document_id=2)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 1
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0  # re-run writes nothing new
+    assert len(repo.contradictions) == 1
+
+
+def test_link_conflict_skips_unpersisted_edge(caplog):
+    repo = FakeLinkRepo([_link(None, 5, 10), _link(2, 5, 11)])
+    with caplog.at_level(logging.WARNING, logger="helixpay.ingest.contradict"):
+        assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert any("skip" in r.message.lower() for r in caplog.records)
+
+
+def test_link_conflict_zero_edges_is_noop():
+    # no edges for the group → nothing to compare, no contradiction, no crash
+    repo = FakeLinkRepo([])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert repo.contradictions == []
+
+
+def test_link_conflict_single_edge_is_noop():
+    # one manager is the normal case — a single reports_to edge never self-conflicts
+    repo = FakeLinkRepo([_link(1, 5, 10)])
+    assert detect_link_conflicts(repo, 5, "reports_to") == 0
+    assert repo.contradictions == []

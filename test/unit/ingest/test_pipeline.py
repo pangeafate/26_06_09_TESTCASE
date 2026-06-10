@@ -29,7 +29,7 @@ class FakeRepo:
         self.links: list[Link] = []
         self.contradictions: list[Contradiction] = []
         self.add_chunks_seen: list[Chunk] = []
-        self._next = {"doc": 1, "chunk": 1, "entity": 1, "claim": 1}
+        self._next = {"doc": 1, "chunk": 1, "entity": 1, "claim": 1, "link": 1}
 
     def seed(self, name, etype):
         e = Entity(id=self._next["entity"], canonical_name=name, entity_type=etype, seeded=True)
@@ -96,13 +96,36 @@ class FakeRepo:
         key = (link.from_entity_id, link.to_entity_id, link.link_type, link.as_of)
         if any((l.from_entity_id, l.to_entity_id, l.link_type, l.as_of) == key for l in self.links):
             return
-        self.links.append(link)
+        lid = self._next["link"]; self._next["link"] += 1
+        self.links.append(link.model_copy(update={"id": lid}))
+
+    def get_links(self, link_type=None, from_entity_id=None):
+        return [l for l in self.links
+                if (link_type is None or l.link_type == link_type)
+                and (from_entity_id is None or l.from_entity_id == from_entity_id)]
 
     def add_contradiction(self, c: Contradiction) -> None:
-        pair = tuple(sorted((c.claim_a_id, c.claim_b_id)))
-        if any(tuple(sorted((x.claim_a_id, x.claim_b_id))) == pair for x in self.contradictions):
+        # dedup on whichever pair is populated: claim-pair OR (SP_011) link-pair. A naive
+        # sorted((a, b)) on a link contradiction would crash (both claim ids are None and
+        # None is unorderable), so branch on which anchor is set — mirrors the DB's two
+        # unique constraints (UNIQUE(claim_a_id, claim_b_id) + contradictions_link_pair).
+        if c.claim_a_id is not None and c.claim_b_id is not None:
+            key = ("claim", min(c.claim_a_id, c.claim_b_id), max(c.claim_a_id, c.claim_b_id))
+        elif c.link_a_id is not None and c.link_b_id is not None:
+            key = ("link", min(c.link_a_id, c.link_b_id), max(c.link_a_id, c.link_b_id))
+        else:
+            self.contradictions.append(c); return
+        if any(self._contra_key(x) == key for x in self.contradictions):
             return
         self.contradictions.append(c)
+
+    @staticmethod
+    def _contra_key(x: Contradiction):
+        if x.claim_a_id is not None and x.claim_b_id is not None:
+            return ("claim", min(x.claim_a_id, x.claim_b_id), max(x.claim_a_id, x.claim_b_id))
+        if x.link_a_id is not None and x.link_b_id is not None:
+            return ("link", min(x.link_a_id, x.link_b_id), max(x.link_a_id, x.link_b_id))
+        return None
 
     def get_claims(self, subject_id, predicate=None):
         return [c for c in self.claims if c.subject_entity_id == subject_id
@@ -299,3 +322,82 @@ def test_same_source_newer_value_supersedes_not_duplicates():
     assert old.superseded_by == new.id and old.valid_to == date(2026, 4, 30)  # set, not deleted
     assert len(repo.claims) == 2  # both rows kept
     assert repo.contradictions == []  # same source → supersede, NOT a contradiction
+
+
+# --------------------------------------------------------------------------- #
+# SP_011 — provenance is produced on the write path
+# --------------------------------------------------------------------------- #
+def test_pipeline_persists_evidence_and_located_offsets():
+    repo = _repo_with_roster()
+    doc = _doc("data/board.md", "h1")
+    chunk = Chunk(ordinal=0, text="Q1 closed at SGD 14.2M against a 16M plan.")
+    extr = ScriptedExtractor({chunk.text: ExtractionOut(claims=[
+        ClaimOut(subject="HelixPay", subject_type="other", predicate="revenue",
+                 object_value="SGD 14.2M", as_of="2026-03-31",
+                 evidence="SGD 14.2M against a 16M plan")])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [chunk]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+    c = repo.claims[0]
+    assert c.evidence == "SGD 14.2M against a 16M plan"
+    assert chunk.text[c.char_start:c.char_end] == "SGD 14.2M against a 16M plan"
+
+
+def test_pipeline_persists_evidence_with_none_offsets_when_unlocatable():
+    # a paraphrased span that isn't a contiguous substring → evidence kept, offsets None
+    repo = _repo_with_roster()
+    doc = _doc("data/board.md", "h1")
+    chunk = Chunk(ordinal=0, text="Topline came to 14.2M for the period.")
+    extr = ScriptedExtractor({chunk.text: ExtractionOut(claims=[
+        ClaimOut(subject="HelixPay", subject_type="other", predicate="revenue",
+                 object_value="14.2M", as_of="2026-03-31",
+                 evidence="ARR figure reported as 14.2M total annual")])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [chunk]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+    c = repo.claims[0]
+    assert c.evidence == "ARR figure reported as 14.2M total annual"
+    assert c.char_start is None and c.char_end is None
+
+
+def test_pipeline_link_carries_document_id():
+    repo = _repo_with_roster()
+    doc = _doc("data/board.md", "h1")
+    extr = ScriptedExtractor({"c1": ExtractionOut(
+        relations=[RelationOut(from_entity="Sara Wijaya", to_entity="Daniel Tan", link_type="reports_to")])})
+    run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+        embedder=FakeEmbedder(), extractor=extr)
+    assert len(repo.links) == 1
+    assert repo.links[0].document_id is not None
+    assert repo.links[0].source_chunk_id is not None
+
+
+def test_pipeline_detects_link_contradiction_across_managers():
+    repo = _repo_with_roster()
+    arjun = repo.seed("Arjun Kapoor", "person")
+    sara = next(e.id for e in repo.entities if e.canonical_name == "Sara Wijaya")
+    doc = _doc("data/x.md", "h1")
+    # one subject, two DIFFERENT solid-line managers in the same chunk → a graph conflict
+    extr = ScriptedExtractor({"c1": ExtractionOut(relations=[
+        RelationOut(from_entity="Sara Wijaya", to_entity="Daniel Tan", link_type="reports_to"),
+        RelationOut(from_entity="Sara Wijaya", to_entity="Arjun Kapoor", link_type="reports_to"),
+    ])})
+    report = run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+                 embedder=FakeEmbedder(), extractor=extr)
+    assert report.links == 2
+    assert report.contradictions == 1
+    link_contras = [c for c in repo.contradictions if c.link_a_id is not None]
+    assert len(link_contras) == 1
+    c = link_contras[0]
+    assert c.subject_entity_id == sara and c.predicate == "reports_to"
+    assert c.kind == "value_conflict"  # both edges from the same document
+    assert {c.link_a_id, c.link_b_id} == {l.id for l in repo.links}  # pairs the two edges
+    del arjun  # seeded only so the second manager resolves
+
+
+def test_pipeline_consistent_reports_to_has_no_link_contradiction():
+    repo = _repo_with_roster()
+    doc = _doc("data/x.md", "h1")
+    extr = ScriptedExtractor({"c1": ExtractionOut(relations=[
+        RelationOut(from_entity="Sara Wijaya", to_entity="Daniel Tan", link_type="reports_to")])})
+    report = run("data", repo, discover=_discover_of((FakeConnector(doc, [Chunk(ordinal=0, text="c1")]), "p")),
+                 embedder=FakeEmbedder(), extractor=extr)
+    assert report.links == 1 and report.contradictions == 0
