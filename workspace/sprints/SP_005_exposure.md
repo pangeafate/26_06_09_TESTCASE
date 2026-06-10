@@ -5,7 +5,7 @@ features: [exposure-mcp, exposure-api, exposure-cli]
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_005-exposure
 worktree: .claude/worktrees/SP_005

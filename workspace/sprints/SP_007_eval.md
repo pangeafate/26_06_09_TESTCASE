@@ -5,7 +5,7 @@ features: [eval-harness, golden-ground-truth, adversarial-verifier]
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_007-eval
 worktree: .claude/worktrees/SP_007

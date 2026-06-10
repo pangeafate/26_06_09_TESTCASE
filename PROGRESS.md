@@ -13,7 +13,7 @@ authoritative-for: [active-sprint, sprint-history]
 
 **Current:** SP_008
 **Started:** 2026-06-09
-**Stage:** Complete
+**Stage:** Complete — Phase 1 integrated on `merge/integration`
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
@@ -30,14 +30,49 @@ Repository, config, seed roster + metric_vocab, query fixture). Freeze proven:
 schema applies on pgvector pg16, seed loads (12 metrics / 63 entities / 99
 links), mypy clean, 38 tests green. Stages 3 + 5 complete.
 
+## Phase 1 Integration
+
+**Branch:** `merge/integration` (off `main` @ SP_008). The six worktree slices
+(SP_002–SP_007) merged in dependency order. Two expected conflicts resolved:
+`helixpay/ingest/__init__.py` (SP_002+SP_003 add/add → docstring union) and
+`PROGRESS.md` (SP_004 → take-main). Real engine wired into the exposure startup
+(`helixpay.api.app.wire_engine`, gated on `DATABASE_URL`). Runtime deps
+consolidated into one `pyproject.toml` + `helixpay` console script + regenerated
+`uv.lock` (DEV_REINFORCE F-2). **Integrated tree: 260 passed / 22 db-skipped,
+mypy clean (52 files), 11/11 validators PASS, dev-gateway green via `.venv`.**
+Remaining to go live: run the Agent-6 gate against a real pgvector DB
+(`make up` → migrate → seed → ingest `data/` → `eval/run.py` ≥80% recall) and
+deploy (`deploy.sh` → `/health` 200, `/mcp` live).
+
 ## Sprint History
 
-### SP_XXX: [Sprint Name]
+### SP_002–SP_007: HelixPay Phase 1 six-agent fan-out
 
-- **Status**: [Complete / Abandoned / Superseded by SP_YYY]
-- **Date**: [YYYY-MM-DD]
-- **Summary**: [One-line description of what was delivered]
-- **Tests added**: [+N new tests (NNNN total)]
+- **Status**: Complete (integrated on `merge/integration`)
+- **Date**: 2026-06-10
+- **Summary**: SP_002 source loaders (8 formats); SP_003 extraction/embedding/
+  contradiction/resolution pipeline; SP_004 query+ask engine (cited, contradiction-
+  surfacing); SP_005 exposure (FastAPI + streamable-HTTP MCP + CLI); SP_006 infra
+  (Docker/compose/Makefile/deploy, live DNS+TLS); SP_007 eval/ground-truth harness.
+- **Tests added**: 260 passing on the integrated tree (22 db-gated skips).
+
+### SP_001: Phase 0 Gate
+
+- **Status**: Complete
+- **Date**: 2026-06-09
+- **Summary**: Froze the shared substrate — contracts, schema, Repository, config,
+  seed roster + metric_vocab, query fixture. Schema applies on pgvector pg16; seed
+  loads 12 metrics / 63 entities / 99 links; mypy clean.
+- **Tests added**: +38
+
+### SP_008: DEV_RULES Reinforcement
+
+- **Status**: Complete
+- **Date**: 2026-06-09
+- **Summary**: Implemented DEV_REINFORCE findings — status advisory, orphan-worktree
+  WI-4, declared-deps field + validator + consolidation script, package-root
+  scaffolding, env pin, integration-as-owned-phase.
+- **Tests added**: +13 validator tests
 
 <!-- Example:
 ### SP_130: Workout Tracking Foundation

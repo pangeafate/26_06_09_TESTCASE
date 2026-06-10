@@ -5,7 +5,7 @@ features: [infra-compose, infra-dockerfile, infra-makefile, infra-deploy-vhost]
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: Done
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_006-infra
 worktree: .claude/worktrees/SP_006

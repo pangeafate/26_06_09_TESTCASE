@@ -5,7 +5,7 @@ features: [extraction, entity-resolution, contradiction-detection, ingestion-pip
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_003-extraction
 worktree: .claude/worktrees/SP_003

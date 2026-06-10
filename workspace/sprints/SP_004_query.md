@@ -5,7 +5,7 @@ features: [query-engine, hybrid-retrieval, temporal-resolver, contradiction-surf
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_004-query
 worktree: .claude/worktrees/SP_004
