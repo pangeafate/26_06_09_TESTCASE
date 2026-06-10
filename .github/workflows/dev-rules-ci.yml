@@ -12,6 +12,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the governance validators resolve the active sprint and the
+          # doc-freshness diff base from git log (commit subjects + the plan-introducing
+          # commit's parent). A shallow (depth-1) checkout breaks both — it makes the
+          # gateway diff every meta-doc against the empty tree and mis-resolve the active
+          # sprint — so CI diverges from the local gateway. Fetch everything.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
