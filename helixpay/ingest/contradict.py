@@ -170,10 +170,14 @@ def link_windows_overlap(a: Link, b: Link) -> bool:
 
 
 def _classify_link(a: Link, b: Link) -> str:
-    """``source_disagreement`` when the two edges come from *different* documents (the graph
-    analogue of the claim case); otherwise ``value_conflict`` (one source emitting two
-    incompatible edges). Reuses the existing ``ContradictionKind`` vocabulary — no new enum
-    value, so no contract/schema change."""
+    """``source_disagreement`` when the two edges come from *different, known* documents (the
+    graph analogue of the claim case); otherwise ``value_conflict``. Reuses the existing
+    ``ContradictionKind`` vocabulary — no new enum value, so no contract/schema change.
+
+    A missing ``document_id`` on either edge (e.g. a seeded backbone edge, which carries no
+    document) deliberately stays ``value_conflict``: we only assert *source* disagreement when
+    we can name two distinct documents. Under-claiming here is the safe direction — it never
+    fabricates a cross-source disagreement we cannot substantiate."""
     if (
         a.document_id is not None
         and b.document_id is not None

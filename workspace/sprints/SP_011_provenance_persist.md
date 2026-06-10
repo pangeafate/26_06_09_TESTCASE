@@ -226,6 +226,17 @@ answers (SP_012); eval assertions on it (SP_013).
   - Link-sweep, offset-capture, and seed behaviors asserted in the fake-repo suites; the
     link-pair SQL path + cited-edge coexistence asserted in the `db`-marked integration suite
     (runs when a DB is present).
+- **Iteration 3** — PR #2 cloud review (ultrareview) follow-up: 2 HIGH + 1 MEDIUM/LOW, all resolved; re-verified green (324 passed / 36 skipped, mypy clean). Files reviewed: grounding.py, contradict.py, test_grounding.py, test_contradict.py, test_run_seed.py.
+  - H-1 (fixed, TDD red→green in separate commits): `locate_span`'s **exact**-match path
+    (`str.find`) had no uniqueness guard — a verbatim string repeated in the chunk (a figure
+    in two table rows) anchored to the first occurrence, misdirecting SP_012 highlight-to-verify.
+    Now both locators commit an offset only on a unique match (`count==1`); a repeat → `None`.
+  - H-2 (verified, no code change): `test/unit/seed/test_run_seed.py` is committed + tracked
+    on the branch (not gitignored), so merging PR #2 carries the undated-edge guard forward;
+    a manual cherry-pick must include it.
+  - MEDIUM/LOW: added `detect_link_conflicts` zero-edge and single-edge no-op tests; clarified
+    that `_classify_link` deliberately stays `value_conflict` when a `document_id` is absent
+    (under-claim rather than fabricate a cross-source disagreement).
 
 > **Deploy note (re-seed migration):** the seed `as_of` change alters the seeded reporting
 > edges' natural key. On a DB seeded *before* SP_011, run a fresh re-seed (or drop the

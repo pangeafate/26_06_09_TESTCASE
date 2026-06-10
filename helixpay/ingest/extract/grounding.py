@@ -83,24 +83,32 @@ def locate_span(evidence: Optional[str], chunk_text: str) -> Optional[tuple[int,
       case-insensitively against the raw chunk, so ``"end-of Q3"`` vs ``"end of  Q3"`` and
       casing differences still anchor to real offsets.
 
-    Returns ``None`` when there is no evidence or it is not a *contiguous* span of the chunk
-    (e.g. a heavily paraphrased ``value_only`` grounding) — the caller still persists the
-    ``evidence`` text, just with ``None`` offsets. This intentionally does NOT use grounding's
-    token-overlap fallback: an overlap score yields no single span, so there is nothing to
-    anchor."""
+    **Both** locators commit an offset only when the span occurs **exactly once**: a string
+    that repeats in the chunk (e.g. the same figure in two table rows, ``"SGD 14.2M"``) gives
+    no way to know which occurrence the model cited, and anchoring to the leftmost would
+    misdirect SP_012's highlight-to-verify — so an ambiguous match degrades to ``None``.
+
+    Returns ``None`` when there is no evidence, the span is ambiguous, or it is not a
+    *contiguous* span of the chunk (e.g. a heavily paraphrased ``value_only`` grounding) — the
+    caller still persists the ``evidence`` text, just with ``None`` offsets. This intentionally
+    does NOT use grounding's token-overlap fallback: an overlap score yields no single span, so
+    there is nothing to anchor."""
     if not evidence or not evidence.strip():
         return None
-    idx = chunk_text.find(evidence)
-    if idx >= 0:
+    # Exact-substring path — committed only when the verbatim string is unique (H-1).
+    exact_hits = chunk_text.count(evidence)
+    if exact_hits == 1:
+        idx = chunk_text.find(evidence)
         return idx, idx + len(evidence)
+    if exact_hits > 1:
+        return None  # repeated verbatim string — cannot know which occurrence was cited
     tokens = evidence.split()
     if not tokens:
         return None
     pattern = r"\s+".join(re.escape(tok) for tok in tokens)
-    # Ambiguity guard: if the (whitespace-normalized) span occurs more than once in the
-    # chunk, the leftmost match is not necessarily the one the model cited — returning it
-    # would anchor the offsets to the wrong occurrence. Only commit an offset when the
-    # match is unique; otherwise degrade to None (evidence text is still persisted).
+    # Same uniqueness guard for the whitespace-normalized path: a span that matches more than
+    # once is ambiguous, so only commit an offset when the match is unique; else degrade to
+    # None (evidence text is still persisted).
     matches = re.finditer(pattern, chunk_text, re.IGNORECASE)
     first = next(matches, None)
     if first is None or next(matches, None) is not None:
