@@ -25,7 +25,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-from helixpay.contracts import Claim, Contradiction, Repository
+from helixpay.contracts import Claim, Contradiction, Link, Repository
 
 # Value normalization is the shared SP_009 substrate — one definition across contradiction
 # detection, the eval matcher, and consensus rollup, so equality never drifts between them.
@@ -138,10 +138,116 @@ def detect(repo: Repository, subject_id: int, predicate: str) -> int:
     return written
 
 
+# --------------------------------------------------------------------------- #
+# Link (graph) contradictions (SP_011, gap 4)                                  #
+# --------------------------------------------------------------------------- #
+# Only solid-line management is single-valued: a person has one manager at a time, so two
+# edges to DIFFERENT managers over overlapping validity is a real graph conflict. Everything
+# else is legitimately multi-valued (member_of: many teams) or distinct by design
+# (dotted_line_to is functional and intentionally separate from reports_to — CLAUDE.md;
+# owns/mentions are unconstrained), so they are never swept.
+_SINGLE_VALUED_LINK_TYPES = frozenset({"reports_to"})
+
+
+def _link_window(link: Link) -> tuple[Optional[date], Optional[date]]:
+    """A link's validity interval ``[as_of, valid_to]``. Unlike a claim's ``_window`` (where
+    a missing ``valid_to`` collapses to the ``as_of`` point), an open ``reports_to`` line has
+    ``valid_to=None`` meaning *still in effect* → the upper bound is open (+∞). So ``hi`` is
+    ``valid_to`` verbatim (``None`` = open), never folded onto ``as_of``."""
+    return link.as_of, link.valid_to
+
+
+def link_windows_overlap(a: Link, b: Link) -> bool:
+    """Overlap of two link validity intervals, ``None`` = open bound (mirrors
+    ``windows_overlap`` for claims but with link semantics — see ``_link_window``)."""
+    a_lo, a_hi = _link_window(a)
+    b_lo, b_hi = _link_window(b)
+    if a_lo is not None and b_hi is not None and a_lo > b_hi:
+        return False
+    if b_lo is not None and a_hi is not None and b_lo > a_hi:
+        return False
+    return True
+
+
+def _classify_link(a: Link, b: Link) -> str:
+    """``source_disagreement`` when the two edges come from *different* documents (the graph
+    analogue of the claim case); otherwise ``value_conflict`` (one source emitting two
+    incompatible edges). Reuses the existing ``ContradictionKind`` vocabulary — no new enum
+    value, so no contract/schema change."""
+    if (
+        a.document_id is not None
+        and b.document_id is not None
+        and a.document_id != b.document_id
+    ):
+        return "source_disagreement"
+    return "value_conflict"
+
+
+def detect_link_conflicts(repo: Repository, from_entity_id: int, link_type: str) -> int:
+    """Detect and persist *graph* contradictions for one ``(from_entity_id, link_type)``
+    group: two edges to **different** ``to_entity`` over overlapping validity windows become
+    a ``Contradiction`` pairing the two *links* (``link_a_id``/``link_b_id``). Returns the
+    number of new rows written (idempotent: the DB partial unique index dedupes the link
+    pair, and the in-memory ``seen_pairs`` makes the count honest on a re-run).
+
+    Only ``reports_to`` is swept; any other ``link_type`` returns 0 (see
+    ``_SINGLE_VALUED_LINK_TYPES``). There is no automatic link supersession (links carry no
+    ``superseded_by``), so a genuine re-org modeled by leaving *both* lines open will surface
+    here — that is the intended "surface, don't silently resolve" behavior."""
+    if link_type not in _SINGLE_VALUED_LINK_TYPES:
+        return 0
+    links = repo.get_links(link_type, from_entity_id)
+    # Pairs already recorded for this subject — read the LINK columns (not claim columns):
+    # a graph contradiction has claim_a_id/claim_b_id None and link_a_id/link_b_id set.
+    seen_pairs: set[tuple[int, int]] = {
+        (min(c.link_a_id, c.link_b_id), max(c.link_a_id, c.link_b_id))
+        for c in repo.get_contradictions(from_entity_id)
+        if c.link_a_id is not None and c.link_b_id is not None
+    }
+    written = 0
+    for i in range(len(links)):
+        for j in range(i + 1, len(links)):
+            a, b = links[i], links[j]
+            if a.id is None or b.id is None:
+                log.warning(
+                    "skip link contradiction with unpersisted edge",
+                    extra={"from_entity_id": from_entity_id, "link_type": link_type},
+                )
+                continue
+            if a.to_entity_id == b.to_entity_id:
+                continue  # same target — agreement, not a conflict
+            pair = (min(a.id, b.id), max(a.id, b.id))
+            if pair in seen_pairs:
+                continue  # already recorded — re-run is a no-op
+            if not link_windows_overlap(a, b):
+                continue  # disjoint validity — a legitimate succession, not a conflict
+            seen_pairs.add(pair)
+            kind = _classify_link(a, b)
+            repo.add_contradiction(
+                Contradiction(
+                    subject_entity_id=from_entity_id,
+                    predicate=link_type,
+                    link_a_id=a.id,
+                    link_b_id=b.id,
+                    kind=kind,
+                    note=f"{link_type}: → {a.to_entity_id} ({a.as_of}) vs → {b.to_entity_id} ({b.as_of})",
+                )
+            )
+            written += 1
+    if written:
+        log.info(
+            "link contradictions detected",
+            extra={"from_entity_id": from_entity_id, "link_type": link_type, "count": written},
+        )
+    return written
+
+
 __all__ = [
     "detect",
+    "detect_link_conflicts",
     "normalize_value",
     "values_conflict",
     "windows_overlap",
+    "link_windows_overlap",
     "classify",
 ]

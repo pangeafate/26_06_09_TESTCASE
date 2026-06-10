@@ -5,7 +5,7 @@ features: [evidence-persist, link-provenance, link-contradictions, org-chart-ing
 user_stories: []
 schema_touched: false
 structure_touched: true
-status: In Progress
+status: Complete
 isolation: git-worktree
 branch: sprint/SP_011-provenance-persist
 worktree: .claude/worktrees/SP_011

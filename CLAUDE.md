@@ -315,3 +315,9 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
 - Ingestion is idempotent on `content_hash`; re-running on unchanged data is a
   no-op. Seeding and `add_claim` are idempotent on their natural keys, so re-seeding
   is safe.
+- Seeded `reports_to`/`dotted_line_to` edges are seeded **undated** (`as_of=None`, SP_011)
+  so the cited edge extracted from `org-chart.md` (export-dated) doesn't dedupe away against
+  them on the links natural key (`COALESCE(as_of,'0001-01-01')`). Consequence: a DB seeded
+  *before* this change must be **re-seeded fresh** (or have its stamped reporting rows
+  dropped) — changing the `as_of` changes the natural key, so a re-seed *adds* an undated
+  twin instead of being a no-op. Fresh `make up && seed` is unaffected.
