@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-09
+last-reconciled: 2026-06-10
 authoritative-for: [phases, milestones]
 ---
 
@@ -33,11 +33,20 @@ Fan out to worktree-isolated agents (disjoint ownership, spec §6):
 Integrate; Agent 6 runs extraction precision/recall on the golden set + the deep-
 question answer checks; one fixer resolves findings; `/simplify` for CLAUDE.md compliance.
 
-## Phase 3 — Live deploy ⬜
+## Phase 3 — Live deploy (in progress — operator-gated)
 
-Deploy to the droplet `138.197.187.49` (Docker + existing TLS proxy + DNS); ingest once
-on the box; MCP reachable at `https://helixpay.<domain>/mcp`. `SOLUTION.md` opens with
-the live URL.
+Deploy is **decoupled from the full ingest** (SP_016). Phases:
+
+- **Phase A** (code complete, pending operator push): push `main` → CI gateway → CI deploy →
+  `deploy.sh` brings up the app with the seeded backbone (schema + deterministic seed, no full corpus).
+  App serves at `https://helixpay.serverado.app`; `verify_mcp.py` confirms MCP reachable.
+- **Phase B** (operator-gated, paid ~1h): SP_015 proof signed + MCP green → `scripts/full_run.py`
+  (one governed 44-doc extraction) → `scripts/prod_seed.sh` (pg_dump → pg_restore with
+  `CREATE EXTENSION vector` ordering).
+- **Phase C** (operator-gated, paid ~Opus pass): live `eval.run` Level-2 → recall ≥85%,
+  zero uncited claims, both contradictions surfaced → sign `SP016_live_verification.md`.
+
+Full procedure in `workspace/acceptance/SP016_live_verification.md`.
 
 ## `/goal` (done condition)
 

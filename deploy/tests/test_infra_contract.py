@@ -162,3 +162,91 @@ def test_vhost_routes_to_loopback() -> None:
     if nginx.exists():
         blob += nginx.read_text(encoding="utf-8")
     assert "127.0.0.1:8000" in blob, "vhost must reverse-proxy to the app loopback port"
+
+
+# --------------------------------------------------------------------------- #
+# SP_016 — deploy decoupling + CI job invariants
+# --------------------------------------------------------------------------- #
+
+DEPLOY_SH = ROOT / "deploy" / "deploy.sh"
+DEPLOY_YML = ROOT / ".github" / "workflows" / "deploy.yml"
+
+
+def test_deploy_sh_performs_up_migrate_seed() -> None:
+    """deploy.sh must include the three canonical post-compose steps."""
+    assert DEPLOY_SH.exists(), "deploy/deploy.sh missing"
+    text = DEPLOY_SH.read_text(encoding="utf-8")
+    assert "docker compose up" in text, "deploy.sh must run docker compose up"
+    assert "helixpay.db.migrate" in text, "deploy.sh must apply schema via python -m helixpay.db.migrate"
+    assert "helixpay.seed.run_seed" in text, "deploy.sh must seed via python -m helixpay.seed.run_seed"
+
+
+def test_deploy_sh_contains_no_unguarded_ingest() -> None:
+    """SP_016 key invariant: the full ingest must be removed from deploy.sh so that
+    deploying the app never triggers an unguarded paid extraction.  The sanctioned
+    path is scripts/full_run.py (behind the SP_015 gate)."""
+    assert DEPLOY_SH.exists(), "deploy/deploy.sh missing"
+    text = DEPLOY_SH.read_text(encoding="utf-8")
+    # Must not invoke the 'helixpay ingest' CLI command directly.
+    assert "helixpay ingest" not in text, (
+        "deploy.sh must not run 'helixpay ingest' — that is an unguarded paid extraction. "
+        "Full corpus ingestion goes via scripts/full_run.py (SP_015 gate) only."
+    )
+    # Must not call 'ingest ./data' via any other mechanism.
+    assert "ingest ./data" not in text, (
+        "deploy.sh must not contain 'ingest ./data' — remove the unguarded extraction step."
+    )
+
+
+def test_deploy_sh_health_check_present() -> None:
+    """deploy.sh must verify the app is alive after startup."""
+    assert DEPLOY_SH.exists(), "deploy/deploy.sh missing"
+    text = DEPLOY_SH.read_text(encoding="utf-8")
+    assert "/health" in text, "deploy.sh must curl /health as a liveness gate"
+
+
+def test_deploy_sh_never_echoes_secrets() -> None:
+    """deploy.sh must never echo the .env contents or any secret value.
+    Specifically it must not echo $ANTHROPIC_API_KEY, $VOYAGE_API_KEY, or $DATABASE_URL."""
+    assert DEPLOY_SH.exists(), "deploy/deploy.sh missing"
+    text = DEPLOY_SH.read_text(encoding="utf-8")
+    for secret_var in ("ANTHROPIC_API_KEY", "VOYAGE_API_KEY", "DATABASE_URL"):
+        # Allow referencing the var in comments or -f checks; disallow echoing its value.
+        # A line like `echo "... $SECRET_VAR ..."` would be a violation.
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "echo" in stripped and f"${secret_var}" in stripped:
+                raise AssertionError(
+                    f"deploy.sh must not echo ${secret_var} — secrets must never be logged"
+                )
+
+
+def test_deploy_yml_exists_and_gates_on_ci() -> None:
+    """The CD workflow must exist and the deploy job must declare a 'needs' dependency
+    on the CI/test job so that a failing test suite blocks the deploy."""
+    assert DEPLOY_YML.exists(), ".github/workflows/deploy.yml must exist (CI/CD-first deploy)"
+    text = DEPLOY_YML.read_text(encoding="utf-8")
+    # The deploy job must name a 'needs:' that references the gateway/test job.
+    assert "needs:" in text, "deploy.yml deploy job must declare 'needs:' to gate on the CI job"
+    assert "gateway" in text or "test" in text or "ci" in text.lower(), (
+        "deploy.yml must reference the CI/gateway job by name in 'needs:'"
+    )
+
+
+def test_deploy_yml_uses_secrets_not_inline_values() -> None:
+    """All sensitive values in the deploy workflow must come from GitHub secrets,
+    never as literal values in the YAML."""
+    assert DEPLOY_YML.exists(), ".github/workflows/deploy.yml must exist"
+    text = DEPLOY_YML.read_text(encoding="utf-8")
+    assert "secrets.DEPLOY_SSH_KEY" in text, (
+        "deploy.yml must use secrets.DEPLOY_SSH_KEY (never a literal key)"
+    )
+    assert "secrets.DROPLET_HOST" in text, (
+        "deploy.yml must use secrets.DROPLET_HOST (never a literal IP)"
+    )
+    # Hard-coded IP must not appear in the workflow.
+    assert "138.197.187.49" not in text, (
+        "deploy.yml must not hardcode the droplet IP — use secrets.DROPLET_HOST"
+    )

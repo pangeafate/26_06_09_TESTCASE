@@ -1,9 +1,8 @@
 ---
 status: living
-last-reconciled: 2026-06-09
+last-reconciled: 2026-06-10
 authoritative-for: [active-sprint, sprint-history]
 ---
-<!-- Template: fill in sections below. Replace last-reconciled with today's ISO date when you copy. Remove this comment when populated. -->
 
 # Progress
 
@@ -11,24 +10,25 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_008
-**Started:** 2026-06-09
-**Stage:** Complete — Phase 1 integrated on `merge/integration`
+**Current:** SP_016
+**Started:** 2026-06-10
+**Stage:** Phase A code complete — pending operator live deploy (Phases B/C operator-gated)
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
-SP_008 — DEV_RULES Reinforcement: implement the `DEV_RULES/DEV_REINFORCE.md`
-findings from the SP_002–SP_007 fan-out (status advisory, orphan-worktree WI-4,
-declared-dependencies field + validator + consolidation script, package-root
-scaffolding practice, env pin, integration-as-owned-phase). Plan:
-`workspace/sprints/SP_008_dev_reinforce.md`. Touches the governance substrate
-(validators/, scripts/, practices/, template, build spec) — disjoint from the
-in-flight worktrees, so `isolation: shared-tree` on main is safe.
+SP_016 — Functional live system — gated deploy. Phase A code complete:
+  - `deploy/deploy.sh` decoupled from full ingest (no more unguarded `helixpay ingest ./data`).
+  - `.github/workflows/deploy.yml` CI/CD deploy job wired (gated on gateway job).
+  - `scripts/verify_mcp.py` MCP agent-reachability verifier (streamable-HTTP, exits non-zero on failure).
+  - `scripts/prod_seed.sh` production seed transfer (pg_dump → restore, SP015 proof guard).
+  - `deploy/tests/test_infra_contract.py` extended with SP_016 invariants.
+  - `test/unit/scripts/test_verify_mcp.py` and `test_prod_seed.py` new unit tests.
+  - `workspace/acceptance/SP016_live_verification.md` signed-artifact template with exact operator steps.
+  - Meta-docs reconciled (Rule 16).
+  Phases B + C (full corpus load + live eval) are operator-gated — pending operator smoke.
+  Plan: `workspace/sprints/SP_016_live_deploy.md`.
 
-Prior: SP_001 — Phase 0 Gate froze the shared substrate (contracts, schema,
-Repository, config, seed roster + metric_vocab, query fixture). Freeze proven:
-schema applies on pgvector pg16, seed loads (12 metrics / 63 entities / 99
-links), mypy clean, 38 tests green. Stages 3 + 5 complete.
+Prior: SP_008 — DEV_RULES Reinforcement. SP_001 — Phase 0 Gate.
 
 ## Phase 1 Integration
 
@@ -40,9 +40,10 @@ links), mypy clean, 38 tests green. Stages 3 + 5 complete.
 consolidated into one `pyproject.toml` + `helixpay` console script + regenerated
 `uv.lock` (DEV_REINFORCE F-2). **Integrated tree: 260 passed / 22 db-skipped,
 mypy clean (52 files), 11/11 validators PASS, dev-gateway green via `.venv`.**
-Remaining to go live: run the Agent-6 gate against a real pgvector DB
-(`make up` → migrate → seed → ingest `data/` → `eval/run.py` ≥80% recall) and
-deploy (`deploy.sh` → `/health` 200, `/mcp` live).
+Deploy decoupled from full ingest (SP_016 Phase A): `deploy.sh` brings the
+app live with the seeded backbone only; the full corpus (44 docs) loads via
+`scripts/full_run.py` after the SP_015 gate opens. Phases B + C are
+operator-gated (see `workspace/acceptance/SP016_live_verification.md`).
 
 ## Sprint History
 
@@ -64,6 +65,17 @@ deploy (`deploy.sh` → `/health` 200, `/mcp` live).
   seed roster + metric_vocab, query fixture. Schema applies on pgvector pg16; seed
   loads 12 metrics / 63 entities / 99 links; mypy clean.
 - **Tests added**: +38
+
+### SP_016: Functional live system — gated deploy (Phase A)
+
+- **Status**: Phase A code complete; Phases B+C pending operator smoke
+- **Date**: 2026-06-10
+- **Summary**: Deploy decoupled from full ingest; CI/CD deploy job wired;
+  `verify_mcp.py` MCP verifier; `prod_seed.sh` production seed transfer;
+  infra contract tests extended; meta-docs reconciled (Rule 16).
+  Phases B (full run) + C (live eval) are operator-gated.
+  Acceptance template: `workspace/acceptance/SP016_live_verification.md`.
+- **Tests added**: +16 (infra contract extensions + test_verify_mcp + test_prod_seed)
 
 ### SP_008: DEV_RULES Reinforcement
 

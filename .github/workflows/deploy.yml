@@ -1,0 +1,127 @@
+name: Deploy to Production
+
+# CI/CD-first deploy (CLAUDE.md Rule 11):
+#   push main → gateway (dev-rules CI) → deploy job (this file).
+# The deploy job is gated on the 'gateway' job — a failing test suite blocks deploy.
+#
+# Required GitHub Actions secrets (never hardcode values here):
+#   DEPLOY_SSH_KEY  — private key whose public key is in root@<droplet>:~/.ssh/authorized_keys
+#   DROPLET_HOST    — hostname or IP of the droplet (stored as a GitHub Actions secret —
+#                     never hardcode the actual value here)
+#
+# KEY ROTATION: any API keys previously exposed in transcripts are COMPROMISED.
+# The .env on the box must use freshly-rotated keys. This workflow deploys code,
+# not secrets. Secrets live in .env on the box (chmod 600, never committed).
+
+on:
+  push:
+    branches: [main]
+  # Allow manual re-deploys (e.g. after rotating .env on the box without a code push).
+  workflow_dispatch:
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Dev-rules gateway (lint, validate, test)
+  # This is the existing backstop — referenced here by name so the deploy
+  # job can declare 'needs: gateway'.
+  # -----------------------------------------------------------------------
+  gateway:
+    uses: ./.github/workflows/dev-rules-ci.yml
+
+  # -----------------------------------------------------------------------
+  # Job 2: Deploy to the droplet — gated on the gateway job passing.
+  # -----------------------------------------------------------------------
+  deploy:
+    name: Deploy to droplet
+    runs-on: ubuntu-latest
+
+    # Serialize deploys (Stage-5 M3): two overlapping pushes must not run
+    # `rsync --delete` + deploy.sh against the shared droplet concurrently. Do NOT
+    # cancel an in-progress deploy mid-flight (a half-applied deploy is worse than a queued one).
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+
+    # CRITICAL: gates deploy on test/CI passing (CLAUDE.md Rule 11).
+    needs: gateway
+
+    # Only deploy on pushes to main (not on PRs or other triggers that
+    # reach this workflow via reuse).
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for sprint/gateway validators
+
+      # -----------------------------------------------------------------------
+      # Set up SSH — key from GitHub secret, known_hosts from ssh-keyscan
+      # (avoids StrictHostKeyChecking=no while still being non-interactive).
+      # -----------------------------------------------------------------------
+      - name: Install SSH key
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          # Populate known_hosts for the droplet (avoids MitM-risk of StrictHostKeyChecking=no)
+          ssh-keyscan -H "${{ secrets.DROPLET_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      # -----------------------------------------------------------------------
+      # Push code to the box via rsync, then run deploy.sh remotely.
+      # Using rsync instead of 'git pull on the box' avoids git state issues
+      # on the remote (e.g. local edits, detached HEAD after force-push).
+      # The .env on the box is NOT touched by CI — secrets are out-of-band.
+      # -----------------------------------------------------------------------
+      - name: Sync code to droplet
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+        run: |
+          rsync -az --delete \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='.git/' \
+            --exclude='.venv/' \
+            --exclude='.replay-cache/' \
+            -e "ssh -i ~/.ssh/id_deploy -o BatchMode=yes" \
+            ./ "root@${DROPLET_HOST}:/opt/helixpay/"
+
+      - name: Run deploy.sh on droplet
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes \
+            "root@${DROPLET_HOST}" \
+            "cd /opt/helixpay && bash deploy/deploy.sh"
+
+      # -----------------------------------------------------------------------
+      # Verify the live endpoint is up after deploy.
+      # Note: verify_mcp.py requires HELIXPAY_PROD_MCP_URL; we do a simpler
+      # health-only check here (the full MCP round-trip is the operator step).
+      # -----------------------------------------------------------------------
+      - name: Verify /health endpoint
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+        run: |
+          # Give the app up to 60s to start serving (first build can be slow).
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://helixpay.serverado.app/health" || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "/health returned 200 — deploy successful."
+              exit 0
+            fi
+            echo "  (attempt $i/12: got $HTTP_CODE, waiting 5s...)"
+            sleep 5
+          done
+          echo "FATAL: /health did not return 200 within 60s after deploy." >&2
+          exit 1
+
+      # -----------------------------------------------------------------------
+      # Cleanup: remove the ephemeral SSH key from the runner.
+      # -----------------------------------------------------------------------
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

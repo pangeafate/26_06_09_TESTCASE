@@ -51,5 +51,11 @@ full lifecycle for production code, schema, integrations, and new capabilities.
 ## Deployment
 
 - Repository: https://github.com/pangeafate/26_06_09_TESTCASE
-- Live surface (target): `https://helixpay.<domain>/` with MCP at `/mcp` (streamable-HTTP)
+- Live surface (in progress): `https://helixpay.serverado.app` with MCP at `/mcp` (streamable-HTTP)
 - Secrets via env only: `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, `DATABASE_URL`
+- CI/CD-first (Rule 11): push `main` → `gateway` CI job → `deploy` job (gated) → `deploy.sh` on droplet
+- Deploy is **decoupled from full ingest** (SP_016): `deploy.sh` brings the app up with the seeded
+  backbone only. The full corpus (44 docs) loads via `scripts/full_run.py` after the SP_015 gate opens.
+- Operator smoke steps in `workspace/acceptance/SP016_live_verification.md`.
+- **KEY ROTATION**: any API keys from transcript history are COMPROMISED; production `.env`
+  must use freshly-rotated keys (chmod 600, never committed).
