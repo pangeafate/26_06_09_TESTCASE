@@ -148,37 +148,24 @@ def test_script_refuses_template_proof(tmp_path):
 # Secret handling — must not echo DATABASE_URL / DSN
 # ---------------------------------------------------------------------------
 
-def test_script_does_not_echo_database_url():
-    """prod_seed.sh must never echo the DATABASE_URL env var value.
-    It may reference the variable in commands but must not print it."""
-    text = _script_text()
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if "echo" in stripped and "$DATABASE_URL" in stripped:
-            raise AssertionError(
-                f"prod_seed.sh must not echo $DATABASE_URL (secrets must never be logged):\n"
-                f"  {line}"
-            )
-        if "echo" in stripped and "$LOCAL_DB_URL" in stripped:
-            raise AssertionError(
-                f"prod_seed.sh must not echo $LOCAL_DB_URL (contains credentials):\n"
-                f"  {line}"
-            )
+# Matches `echo ... $SECRET` / `${SECRET}` — i.e. printing the *expanded value* of a
+# secret env var. It deliberately does NOT match echoing the bare variable NAME as
+# diagnostic text (e.g. `echo "REMOTE_DATABASE_URL=postgres://user:pass@host..."`,
+# prod_seed.sh:165), which is a usage hint, not a leak. `$` (optional `{`) must sit
+# immediately before the name for it to be an expansion.
+_SECRET_ECHO = re.compile(r"echo[^\n]*\$\{?(DATABASE_URL|LOCAL_DB_URL|POSTGRES_PASSWORD)\b")
 
 
-def test_script_does_not_echo_postgres_password():
-    """prod_seed.sh must never echo POSTGRES_PASSWORD."""
-    text = _script_text()
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if "echo" in stripped and "POSTGRES_PASSWORD" in stripped and "$" in stripped:
-            raise AssertionError(
-                f"prod_seed.sh must not echo $POSTGRES_PASSWORD:\n  {line}"
-            )
+def test_script_does_not_echo_secret_env_values():
+    """prod_seed.sh must never echo the expanded value of a secret env var.
+    Comment lines are excluded; only a real `echo ... $SECRET` expansion is a leak."""
+    code = "\n".join(l for l in _script_text().splitlines() if not l.strip().startswith("#"))
+    leak = _SECRET_ECHO.search(code)
+    if leak:
+        pytest.fail(
+            f"prod_seed.sh must not echo a secret env value (secrets must never be logged): "
+            f"{leak.group(0)!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

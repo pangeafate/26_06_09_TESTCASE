@@ -19,7 +19,10 @@ def pytest_collection_modifyitems(config, items):
         return
     skip_db = pytest.mark.skip(reason="DATABASE_URL not set — skipping DB integration test")
     for item in items:
-        if "db" in item.keywords:
+        # Match the actual ``db`` MARKER, not the loose keyword set — ``item.keywords``
+        # also contains ancestor names (e.g. the ``test/unit/db/`` directory), which would
+        # false-skip pure unit tests that merely live under a path containing "db".
+        if item.get_closest_marker("db") is not None:
             item.add_marker(skip_db)
 
 

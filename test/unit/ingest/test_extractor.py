@@ -66,15 +66,12 @@ def test_extract_keeps_valid_drops_bad_and_hypothetical(caplog):
     # valid metric claim kept; wizard subject_type dropped; hypothetical dropped
     assert [c.predicate for c in out.claims] == ["ARR"]
 
-    # Two relations: the original Sara→Daniel and the coerced (inverted) b→a
+    # Two relations: the original Sara→Daniel and the coerced 'manages' (now reports_to).
+    # That two reports_to survive proves the extractor wires coerce in; the inversion
+    # *direction* (b→a) is coerce math, owned by test_coerce.py — not re-asserted here.
     assert len(out.relations) == 2
     link_types = {r.link_type for r in out.relations}
     assert link_types == {"reports_to"}
-
-    # The manages-coerced relation must be inverted: from=b, to=a
-    inverted = next(r for r in out.relations if r.from_entity == "b")
-    assert inverted.to_entity == "a"
-    assert inverted.link_type == "reports_to"
 
     # The original relation must still be there
     original = next(r for r in out.relations if r.from_entity == "Sara Wijaya")
@@ -213,23 +210,13 @@ def test_grounded_claim_confidence_unchanged():
 # SP_014 new tests: coerce, ledger, truncation
 # --------------------------------------------------------------------------- #
 
-def test_q1_as_of_claim_is_retained_after_coerce():
-    """A claim with as_of='Q1 2026' that previously dropped now survives with 2026-03-31."""
-    q1_claim = json.dumps({
-        "claims": [
-            {"subject": "HelixPay", "predicate": "ARR", "object_value": "SGD 14.2M", "as_of": "Q1 2026"}
-        ],
-        "relations": []
-    })
-    llm = StubLLM([q1_claim])
-    ex = ChunkExtractor(llm)
-    out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
-    assert len(out.claims) == 1
-    assert out.claims[0].as_of == "2026-03-31"
-
-
 def test_unmappable_subject_type_is_dropped_and_counted():
-    """subject_type='wizard' drops via coerce and is counted in the ledger."""
+    """subject_type='wizard' drops via coerce and is counted in the ledger.
+
+    This is the extractor↔coerce *wiring* test: it asserts only the ledger-counting
+    that test_coerce.py does NOT cover (items_dropped / dropped_by_reason). The coerce
+    math itself (which enums/quarters map where) is owned by test_coerce.py.
+    """
     wizard = json.dumps({
         "claims": [
             {"subject": "X", "subject_type": "wizard", "predicate": "p", "object_value": "v"}

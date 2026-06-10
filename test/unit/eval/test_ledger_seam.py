@@ -52,21 +52,13 @@ def test_clean_doc_passes() -> None:
 
 
 def test_silent_empty_is_fail() -> None:
+    # One representative real-ledger → FAIL composition: record_empty() flows through
+    # ledger_probe_from into doc_verdict. The full verdict matrix (truncated→FAIL,
+    # drop→INCOMPLETE, …) is owned by test_check_smoke.py over literal dicts — the same
+    # doc_verdict function — so it is not re-run here against the real ledger.
     probe = ledger_probe_from(_ledger())
     v = doc_verdict(_EMPTY, 1, 1, 1.0, probe(_EMPTY), embedding_ok=True)
     assert v["verdict"] == "FAIL"
-
-
-def test_truncated_call_is_fail() -> None:
-    probe = ledger_probe_from(_ledger())
-    v = doc_verdict(_TRUNC, 1, 1, 1.0, probe(_TRUNC), embedding_ok=True)
-    assert v["verdict"] == "FAIL"
-
-
-def test_coerce_drop_is_incomplete() -> None:
-    probe = ledger_probe_from(_ledger())
-    v = doc_verdict(_DROP, 1, 1, 1.0, probe(_DROP), embedding_ok=True)
-    assert v["verdict"] == "INCOMPLETE"
 
 
 def test_unseen_uri_is_incomplete_never_pass() -> None:

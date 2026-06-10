@@ -24,6 +24,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    # Coverage: emits coverage.xml (Cobertura) consumed by validators/validate_tdd.py
+    # via `pytest --cov=helixpay --cov-report=xml`. Not added to addopts so the
+    # inner-loop unit runs stay fast; coverage is an explicit opt-in invocation.
+    "pytest-cov>=5.0",
     "mypy>=1.10",
 ]
 

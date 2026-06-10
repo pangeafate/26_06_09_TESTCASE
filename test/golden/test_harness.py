@@ -163,27 +163,32 @@ def test_extraction_mismatch_on_wrong_as_of():
     assert report.verdicts[0].verdict is Verdict.mismatch
 
 
-def test_link_fact_found_and_reversed():
-    repo = FakeRepo()
-    a = repo.add_entity("Daniel Tan")
-    b = repo.add_entity("Arjun Kapoor")
-    repo.add_link(Link(from_entity_id=a, to_entity_id=b, link_type="reports_to"))
-    fact = GoldenFact.model_validate(
+def _reports_to_fact() -> GoldenFact:
+    """Daniel Tan reports_to Arjun Kapoor — a directional link golden fact."""
+    return GoldenFact.model_validate(
         {"id": "l", "format": "md", "kind": "link", "link_type": "reports_to",
          "from": "Daniel Tan", "to": "Arjun Kapoor", "subject": "Daniel Tan",
          "predicate": "reports_to", "value": "Arjun Kapoor", "as_of": "2026-04-15",
          "source_uri": "data/org-chart.md"}
     )
-    report = check_extraction(repo, GoldenSet(facts=[fact], contradictions=[]))
+
+
+def test_link_fact_found_when_direction_matches():
+    repo = FakeRepo()
+    a = repo.add_entity("Daniel Tan")
+    b = repo.add_entity("Arjun Kapoor")
+    repo.add_link(Link(from_entity_id=a, to_entity_id=b, link_type="reports_to"))
+    report = check_extraction(repo, GoldenSet(facts=[_reports_to_fact()], contradictions=[]))
     assert report.verdicts[0].verdict is Verdict.found
 
-    # reversed direction is a MISMATCH, not FOUND
-    repo2 = FakeRepo()
-    a2 = repo2.add_entity("Daniel Tan")
-    b2 = repo2.add_entity("Arjun Kapoor")
-    repo2.add_link(Link(from_entity_id=b2, to_entity_id=a2, link_type="reports_to"))
-    report2 = check_extraction(repo2, GoldenSet(facts=[fact], contradictions=[]))
-    assert report2.verdicts[0].verdict is Verdict.mismatch
+
+def test_link_fact_reversed_direction_is_mismatch():
+    repo = FakeRepo()
+    a = repo.add_entity("Daniel Tan")
+    b = repo.add_entity("Arjun Kapoor")
+    repo.add_link(Link(from_entity_id=b, to_entity_id=a, link_type="reports_to"))  # reversed
+    report = check_extraction(repo, GoldenSet(facts=[_reports_to_fact()], contradictions=[]))
+    assert report.verdicts[0].verdict is Verdict.mismatch
 
 
 def test_recall_excludes_non_bar_facts():
@@ -198,10 +203,13 @@ def test_recall_excludes_non_bar_facts():
 # --------------------------------------------------------------------------- #
 # answer checks                                                               #
 # --------------------------------------------------------------------------- #
-def test_check_cites_source_and_as_of():
+def test_citation_checks_fail_on_uncited_answer():
     empty = AnswerBundle(answer="x")
     assert evaluate_check("cites_source", empty) is False
     assert evaluate_check("states_as_of", empty) is False
+
+
+def test_citation_checks_pass_on_cited_answer():
     cited = AnswerBundle(
         answer="x",
         citations=[Citation(source_uri="data/org-chart.md", as_of=date(2026, 4, 15))],
@@ -211,7 +219,7 @@ def test_check_cites_source_and_as_of():
     assert evaluate_check("resolves_hierarchy", cited) is True
 
 
-def test_check_surfaces_and_no_false_contradiction():
+def test_contradiction_bundle_surfaces_and_attributes_each_side():
     with_c = AnswerBundle(
         answer="x",
         citations=[
@@ -225,6 +233,8 @@ def test_check_surfaces_and_no_false_contradiction():
     assert evaluate_check("cites_multiple_sources", with_c) is True
     assert evaluate_check("no_false_contradiction", with_c) is False
 
+
+def test_agreeable_answer_has_no_false_contradiction():
     without = AnswerBundle(answer="agree", citations=[Citation(source_uri="a")])
     assert evaluate_check("no_false_contradiction", without) is True
     assert evaluate_check("surfaces_contradiction", without) is False
@@ -256,23 +266,33 @@ def test_check_answers_records_latency_and_failure():
 # --------------------------------------------------------------------------- #
 # /goal verdict                                                               #
 # --------------------------------------------------------------------------- #
-def test_goal_verdict_green_only_when_all_three():
-    from eval.models import AnswerResult, CheckResult, ExtractionReport, FactVerdict
+def _both_found_extr():
+    from eval.models import ExtractionReport, FactVerdict
+    return ExtractionReport(verdicts=[FactVerdict("a", Verdict.found), FactVerdict("b", Verdict.found)])
 
-    extr = ExtractionReport(verdicts=[FactVerdict("a", Verdict.found), FactVerdict("b", Verdict.found)])
-    passing = AnswerResult(
+
+def _passing_answer():
+    from eval.models import AnswerResult, CheckResult
+    return AnswerResult(
         "q",
         checks=[CheckResult("cites_source", True, True),
                 CheckResult("surfaces_contradiction", True, True)],
         surfaced_contradiction=True,
     )
-    v = goal_verdict(extr, [passing], recall_bar=0.8)
+
+
+def test_goal_verdict_green_when_recall_and_contradiction_pass():
+    v = goal_verdict(_both_found_extr(), [_passing_answer()], recall_bar=0.8)
     assert v.passed is True
 
-    # drop recall below the bar
-    extr_low = ExtractionReport(verdicts=[FactVerdict("a", Verdict.found), FactVerdict("b", Verdict.missing)])
-    assert goal_verdict(extr_low, [passing], recall_bar=0.8).passed is False
 
-    # no contradiction surfaced
+def test_goal_verdict_red_when_recall_below_bar():
+    from eval.models import ExtractionReport, FactVerdict
+    extr_low = ExtractionReport(verdicts=[FactVerdict("a", Verdict.found), FactVerdict("b", Verdict.missing)])
+    assert goal_verdict(extr_low, [_passing_answer()], recall_bar=0.8).passed is False
+
+
+def test_goal_verdict_contradiction_ok_false_when_none_surfaced():
+    from eval.models import AnswerResult, CheckResult
     no_c = AnswerResult("q", checks=[CheckResult("cites_source", True, True)], surfaced_contradiction=False)
-    assert goal_verdict(extr, [no_c], recall_bar=0.8).contradiction_ok is False
+    assert goal_verdict(_both_found_extr(), [no_c], recall_bar=0.8).contradiction_ok is False

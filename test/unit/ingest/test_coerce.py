@@ -32,21 +32,20 @@ from helixpay.ingest.extract.schemas import ClaimOut, RelationOut
     # Already-ISO passthrough (no coercion)
     ("2026-03-31",    "2026-03-31"),
     ("2025-12-31",    "2025-12-31"),
-    # None — no coercion, no drop
-    (None,            None),
 ])
 def test_as_of_coercion_claim(raw_as_of, expected):
-    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M"}
-    if raw_as_of is not None:
-        raw["as_of"] = raw_as_of
+    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M", "as_of": raw_as_of}
     result = coerce_item(raw, kind="claim")
-    if expected is None:
-        # no as_of key → item kept, no as_of in output
-        assert result.item is not None
-        assert result.item.get("as_of") is None
-    else:
-        assert result.item is not None, f"Expected item for as_of={raw_as_of!r}"
-        assert result.item["as_of"] == expected
+    assert result.item is not None, f"Expected item for as_of={raw_as_of!r}"
+    assert result.item["as_of"] == expected
+
+
+def test_as_of_absent_is_kept_without_coercion():
+    """No as_of key → item kept, no as_of in output, nothing to coerce or drop."""
+    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M"}
+    result = coerce_item(raw, kind="claim")
+    assert result.item is not None
+    assert result.item.get("as_of") is None
 
 
 def test_as_of_already_iso_records_no_coercion():
@@ -86,42 +85,44 @@ def test_as_of_malformed_mixed_text_drops():
 # subject_type coercion — claims only
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("raw_type, expected_type, coerced", [
-    # Valid types — pass through unchanged
-    ("person",    "person",    False),
-    ("team",      "team",      False),
-    ("customer",  "customer",  False),
-    ("product",   "product",   False),
-    ("metric",    "metric",    False),
-    ("other",     "other",     False),
-    # Case normalisation — kept, recorded as coerced only if changed
-    ("Person",    "person",    True),
-    ("METRIC",    "metric",    True),
-    # Synonyms → other
-    ("company",       "other", True),
-    ("organization",  "other", True),
-    ("org",           "other", True),
-    ("subsidiary",    "other", True),
-    ("business",      "other", True),
-    ("firm",          "other", True),
-    ("corporation",   "other", True),
-    # None — leave absent (no drop)
-    (None,        None,        False),
-])
-def test_subject_type_coercion(raw_type, expected_type, coerced):
-    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M"}
-    if raw_type is not None:
-        raw["subject_type"] = raw_type
+@pytest.mark.parametrize("raw_type", ["person", "team", "customer", "product", "metric", "other"])
+def test_valid_subject_type_passes_through_uncoerced(raw_type):
+    """A canonical subject_type is kept unchanged and records no coercion."""
+    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M", "subject_type": raw_type}
     result = coerce_item(raw, kind="claim")
     assert result.item is not None, f"Unexpected drop for subject_type={raw_type!r}"
-    if expected_type is None:
-        assert result.item.get("subject_type") is None
-    else:
-        assert result.item["subject_type"] == expected_type
-    if coerced:
-        assert "subject_type" in result.coercions
-    else:
-        assert "subject_type" not in result.coercions
+    assert result.item["subject_type"] == raw_type
+    assert "subject_type" not in result.coercions
+
+
+@pytest.mark.parametrize("raw_type, expected_type", [
+    # Case normalisation — kept, recorded as coerced
+    ("Person",        "person"),
+    ("METRIC",        "metric"),
+    # Synonyms → other
+    ("company",       "other"),
+    ("organization",  "other"),
+    ("org",           "other"),
+    ("subsidiary",    "other"),
+    ("business",      "other"),
+    ("firm",          "other"),
+    ("corporation",   "other"),
+])
+def test_subject_type_coercion_records_coercion(raw_type, expected_type):
+    """A non-canonical subject_type maps to a valid type and records the coercion."""
+    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M", "subject_type": raw_type}
+    result = coerce_item(raw, kind="claim")
+    assert result.item is not None, f"Unexpected drop for subject_type={raw_type!r}"
+    assert result.item["subject_type"] == expected_type
+    assert "subject_type" in result.coercions
+
+
+def test_subject_type_absent_stays_absent():
+    """No subject_type key → item kept, no subject_type in output, no drop."""
+    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M"}
+    result = coerce_item(raw, kind="claim")
+    assert result.item is not None
+    assert result.item.get("subject_type") is None
 
 
 def test_unmappable_subject_type_drops():
