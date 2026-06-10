@@ -1,0 +1,46 @@
+# Keep the build context small and the image free of secrets/caches.
+# What the runtime NEEDS stays in: helixpay/, data/, prompts/, eval/, pyproject.toml.
+
+.git
+.github
+.gitignore
+
+# Secrets never enter the image — they arrive at runtime via env_file (.env).
+.env
+*.key
+*.pem
+credentials*
+
+# Virtualenvs, build output, tooling caches
+.venv
+**/__pycache__
+*.pyc
+*.egg-info
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Worktrees + governance bundle + workspace + tooling (not runtime artifacts)
+.claude
+DEV_RULES
+workspace
+practices
+validators
+scripts
+fanout
+.validators.yml
+.pre_impl_passed
+.docs_reconciled
+
+# Tests are run on the host (`make test`), not inside the app image
+test
+deploy
+
+# The infra/meta files themselves aren't needed at runtime
+Dockerfile
+.dockerignore
+docker-compose.yml
+Makefile
+*.md

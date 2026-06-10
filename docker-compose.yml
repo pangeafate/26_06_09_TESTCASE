@@ -1,0 +1,40 @@
+name: helixpay
+
+# One compose file serves both worlds (HELIXPAY_BUILD_SPEC.md §9):
+#   • locally  — the grader hits http://localhost:8000
+#   • on the VM — the existing TLS proxy forwards the subdomain to 127.0.0.1:8000
+# The database is never published; the app is bound to the loopback only.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: helixpay
+    env_file:
+      - .env # supplies POSTGRES_PASSWORD (must match the password in DATABASE_URL)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d helixpay"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # No `ports:` — the database is unreachable from outside the compose network.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env # ANTHROPIC_API_KEY, VOYAGE_API_KEY, DATABASE_URL (host 'db')
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000" # loopback only — the TLS reverse proxy fronts it
+
+volumes:
+  pgdata:
