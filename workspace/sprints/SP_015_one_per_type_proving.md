@@ -276,7 +276,7 @@ is deferred to a coordinated change (operator decision pending).
 > enforcement needs unlisted substrate files) — implementation paused for the operator's
 > enforcement-scope decision (see Hand-off fork).
 
-- **Iteration 1** — architect-reviewer, plan-as-written. Files: build_sample.py, eval/run.py,
+- **Iteration 1** — architect-reviewer, plan-as-written; 1 CRITICAL + 2 HIGH + 1 MEDIUM (all Resolved). Files reviewed: build_sample.py, eval/run.py,
   eval/models.py, repository.py, contracts/repository.py, mcp/server.py, config.py, CLAUDE.md.
   - **CRITICAL:** retrieval sanity calls non-existent `search_chunks`; the frozen contract is
     `search_semantic(qvec)` / `search_lexical(q)`, and a true embedding test needs a **paid**
@@ -290,7 +290,7 @@ is deferred to a coordinated change (operator decision pending).
   - **MEDIUM:** success phrasing "every type extracts correctly with all metadata" overstates
     the bar. **Resolved:** downgraded to "no silent loss + golden-correct + human-reviewed
     metadata" in Success Criteria.
-- **Iteration 2** — security-auditor, adversarial. Files: Makefile, replay.py, pipeline.py,
+- **Iteration 2** — security-auditor, adversarial; 2 CRITICAL + 3 HIGH (Resolved / scoped-fork). Files reviewed: Makefile, replay.py, pipeline.py,
   deploy.sh, config.py, api/app.py, mcp/server.py, eval/run.py, .gitignore.
   - **CRITICAL (gate fails open):** `make ingest` / `ingest-record` / `replay record ./data`
     / `deploy.sh:40` all reach the paid extractor without the guard — the gate is **advisory**.
@@ -317,7 +317,7 @@ is deferred to a coordinated change (operator decision pending).
 > probes), and the advisory guard. The ledger/embedding probe wiring and the paid 9-doc run
 > are operator/SP_014-gated.
 
-- **Iteration 1** — code-reviewer, plan-blind over the changed code + tests
+- **Iteration 1** — code-reviewer, plan-blind; 0 CRITICAL + 2 HIGH + 3 MEDIUM/LOW (all fixed pre-merge). Files reviewed: the changed code + tests
   (`manifest.py`, `build_smoke.py`, `check_smoke.py`, `full_run.py`, `.gitignore`, proof
   template, 3 test files). **0 CRITICAL.** Verified: INCOMPLETE-never-PASS holds (absent
   ledger / zero-norm embedding / golden-MISSING never yield PASS); the gate re-derives from
@@ -346,7 +346,7 @@ is deferred to a coordinated change (operator decision pending).
   unseen→INCOMPLETE) so a drift in either sprint's shape fails here. `test/unit/eval`
   **16 → 24 passed** (+8 seam); the no-paid-surface guard still holds (the adapters add no
   answer surface). The remaining DB/embedding probe is injected by the operator harness at smoke time.
-- **Iteration 2** — pending runtime (DB-gated, paid): build the smoke corpus, record the 9
+- **Iteration 2** — pending runtime (DB-gated, paid); 0 CRITICAL/HIGH (no findings yet — pending). Files reviewed: (none yet — pending the paid 9-doc smoke run). Build the smoke corpus, record the 9
   docs on `helixpay_smoke`, run `check()` with the now-wired SP_014 ledger + embedding probes,
   emit `SP015_smoke_result.json`, and confirm 9/9 (or the honest INCOMPLETE if a doc loses
   data). Recorded as pending operator smoke (Rule 21).
