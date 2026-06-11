@@ -16,6 +16,7 @@ import pytest
 
 from eval.models import KNOWN_CHECKS, KNOWN_FORMATS
 from eval.run import DEFAULT_GOLDEN, DEFAULT_QUESTIONS, load_golden, load_questions
+from helixpay.seed.metric_vocab import canonical_key
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _DATA = _ROOT / "data"
@@ -31,8 +32,10 @@ def questions():
     return load_questions(DEFAULT_QUESTIONS)
 
 
-def test_at_least_twelve_bar_facts(golden):
-    assert len(golden.bar_facts) >= 12
+def test_at_least_thirty_bar_facts(golden):
+    # SP_013 grew the set so the recall bar is statistically meaningful (research P0 #1:
+    # "a dozen facts cannot support a recall bar"). Wilson intervals are reported on top.
+    assert len(golden.bar_facts) >= 30
 
 
 def test_every_source_uri_exists(golden):
@@ -113,3 +116,49 @@ def test_honest_no_false_contradiction_guard_exists(questions):
     # At least one question must reward the truthful "the sources agree" answer,
     # so the system is penalized for hallucinating a revenue conflict.
     assert any("no_false_contradiction" in q.checks for q in questions)
+
+
+# --------------------------------------------------------------------------- #
+# SP_013 — golden-set growth shape: per-format coverage, synonyms, collisions  #
+# --------------------------------------------------------------------------- #
+def test_each_format_has_at_least_two_bar_facts(golden):
+    # The growth must broaden, not just lengthen — ≥2 bar facts per source format
+    # (image excepted: caption-only, informational).
+    from collections import Counter
+
+    counts = Counter(f.format for f in golden.bar_facts)
+    for fmt in KNOWN_FORMATS - {"image"}:
+        assert counts.get(fmt, 0) >= 2, f"format {fmt!r} has <2 bar facts ({counts.get(fmt, 0)})"
+
+
+def test_predicate_synonyms_canonicalize_to_one_key(golden):
+    # ARR ≡ "annual recurring revenue" → one canonical key, or contradiction detection
+    # silently no-ops (research §F; CLAUDE.md ontology rules). Asserted against the
+    # seeded metric_vocab (the in-memory source of truth seeded into the DB table).
+    assert golden.predicate_synonyms, "the grown set must carry predicate-synonym probes"
+    assert any(s.id == "arr-synonym" for s in golden.predicate_synonyms), "ARR is the headline probe"
+    for syn in golden.predicate_synonyms:
+        target = canonical_key(syn.canonical)
+        for alias in syn.aliases:
+            assert canonical_key(alias) == target, (
+                f"{syn.id}: alias {alias!r} → {canonical_key(alias)!r} != {target!r}"
+            )
+
+
+def test_entity_collisions_reference_real_names_and_sources(golden):
+    assert golden.entity_collisions, "the grown set must carry name-collision probes"
+    ids = {c.id for c in golden.entity_collisions}
+    assert {"two-marias", "two-tans"} <= ids
+    for c in golden.entity_collisions:
+        assert len(c.names) >= 2, f"{c.id}: a collision needs ≥2 colliding names"
+        assert len(c.contexts) == len(c.names), f"{c.id}: one context per name"
+        for ctx in c.contexts:
+            uri = ctx.get("source_uri", "")
+            assert (_ROOT / uri).is_file(), f"{c.id}: missing context source {uri}"
+
+
+def test_collision_group_facts_exist_for_each_collision(golden):
+    # Each declared collision should have per-side golden claims tagged with its group,
+    # so the recall check exercises the same names the collision probe asserts.
+    groups = {f.collision_group for f in golden.facts if f.collision_group}
+    assert "maria" in groups and "tan" in groups

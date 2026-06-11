@@ -8,7 +8,7 @@ split across DOM nodes and a hard drop would nuke recall on the planted contradi
 
 from __future__ import annotations
 
-from helixpay.ingest.extract.grounding import GRADE_UNGROUNDED, grade
+from helixpay.ingest.extract.grounding import GRADE_UNGROUNDED, grade, locate_span
 from helixpay.ingest.extract.schemas import ClaimOut
 
 _GROUNDED = {"exact", "value_only"}
@@ -81,3 +81,62 @@ def test_object_value_none_is_grounded_when_span_present():
     # a relation-ish claim with no value can't fabricate a number
     chunk = "Sara Wijaya reports to Daniel Tan."
     assert grade(_c(None, "Sara Wijaya reports to Daniel Tan"), chunk) == "exact"
+
+
+# --------------------------------------------------------------------------- #
+# locate_span (SP_011): raw char offsets of the evidence span into the chunk text
+# --------------------------------------------------------------------------- #
+def test_locate_span_exact_substring():
+    chunk = "Q1 closed at SGD 14.2M against a 16M plan (−11%)."
+    evidence = "SGD 14.2M against a 16M plan"
+    span = locate_span(evidence, chunk)
+    assert span is not None
+    start, end = span
+    assert chunk[start:end] == evidence  # offsets index the raw chunk
+
+
+def test_locate_span_case_and_whitespace_tolerant_keeps_raw_offsets():
+    # the model's evidence differs in case + whitespace from the chunk; offsets must still
+    # land on the raw chunk text (not a normalized copy)
+    chunk = "Sara Wijaya  reports to   Daniel Tan, VP Eng."
+    evidence = "sara wijaya reports to daniel tan"
+    span = locate_span(evidence, chunk)
+    assert span is not None
+    start, end = span
+    assert chunk[start:end].lower().split() == evidence.split()
+
+
+def test_locate_span_paraphrase_not_a_substring_returns_none():
+    # heavily paraphrased evidence (value_only grade) is not a contiguous span → no offsets
+    chunk = "Topline came to 14.2M for the period."
+    evidence = "ARR figure reported as 14.2M total annual"
+    assert locate_span(evidence, chunk) is None
+
+
+def test_locate_span_empty_or_none_evidence_is_none():
+    assert locate_span(None, "anything") is None
+    assert locate_span("   ", "anything") is None
+    assert locate_span("", "") is None
+
+
+def test_locate_span_ambiguous_repeated_whitespace_span_returns_none():
+    # the whitespace-normalized span occurs twice (differing internal spacing each time),
+    # so the leftmost regex match could anchor the wrong occurrence → degrade to None
+    chunk = "reports to  Daniel; later, reports to   Daniel again"
+    evidence = "reports to daniel"
+    assert locate_span(evidence, chunk) is None
+
+
+def test_locate_span_ambiguous_exact_repeat_returns_none():
+    # H-1: the SAME verbatim string appears twice (e.g. one figure in two table rows). The
+    # exact-match path must not silently anchor to the first occurrence — that would
+    # misdirect SP_012 highlight-to-verify. Ambiguous exact match → None.
+    chunk = "Row A: SGD 14.2M.  Row B: SGD 14.2M."
+    assert locate_span("SGD 14.2M", chunk) is None
+
+
+def test_locate_span_unique_exact_still_returns_offsets():
+    # a single verbatim occurrence still resolves to real offsets (the common case)
+    chunk = "Q1 closed at SGD 14.2M against a 16M plan."
+    span = locate_span("SGD 14.2M", chunk)
+    assert span is not None and chunk[span[0]:span[1]] == "SGD 14.2M"

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 import re
+from typing import Optional
 
 from helixpay.ingest.contradict import normalize_value
 from helixpay.ingest.extract.schemas import ClaimOut
@@ -69,6 +70,52 @@ def _value_in_span(object_value: str, evidence: str) -> bool:
     return bool(ov) and ov in _norm_text(evidence)
 
 
+def locate_span(evidence: Optional[str], chunk_text: str) -> Optional[tuple[int, int]]:
+    """Locate the verbatim ``evidence`` span inside ``chunk_text`` and return its **raw**
+    ``[start, end)`` character offsets (indices into ``chunk_text`` itself, not a normalized
+    copy — so the offsets are directly slice-able by the caller and by SP_012's
+    highlight-to-verify). Used by the pipeline to populate ``Claim.char_start``/``char_end``.
+
+    Two locators, raw offsets preserved by both:
+
+    * **exact substring** — the common case (the model usually quotes verbatim);
+    * **case/whitespace-tolerant** — tokens of the evidence joined by ``\\s+`` and matched
+      case-insensitively against the raw chunk, so ``"end-of Q3"`` vs ``"end of  Q3"`` and
+      casing differences still anchor to real offsets.
+
+    **Both** locators commit an offset only when the span occurs **exactly once**: a string
+    that repeats in the chunk (e.g. the same figure in two table rows, ``"SGD 14.2M"``) gives
+    no way to know which occurrence the model cited, and anchoring to the leftmost would
+    misdirect SP_012's highlight-to-verify — so an ambiguous match degrades to ``None``.
+
+    Returns ``None`` when there is no evidence, the span is ambiguous, or it is not a
+    *contiguous* span of the chunk (e.g. a heavily paraphrased ``value_only`` grounding) — the
+    caller still persists the ``evidence`` text, just with ``None`` offsets. This intentionally
+    does NOT use grounding's token-overlap fallback: an overlap score yields no single span, so
+    there is nothing to anchor."""
+    if not evidence or not evidence.strip():
+        return None
+    # Exact-substring path — committed only when the verbatim string is unique (H-1).
+    exact_hits = chunk_text.count(evidence)
+    if exact_hits == 1:
+        idx = chunk_text.find(evidence)
+        return idx, idx + len(evidence)
+    if exact_hits > 1:
+        return None  # repeated verbatim string — cannot know which occurrence was cited
+    tokens = evidence.split()
+    if not tokens:
+        return None
+    pattern = r"\s+".join(re.escape(tok) for tok in tokens)
+    # Same uniqueness guard for the whitespace-normalized path: a span that matches more than
+    # once is ambiguous, so only commit an offset when the match is unique; else degrade to
+    # None (evidence text is still persisted).
+    matches = re.finditer(pattern, chunk_text, re.IGNORECASE)
+    first = next(matches, None)
+    if first is None or next(matches, None) is not None:
+        return None
+    return first.span()
+
+
 def grade(claim: ClaimOut, chunk_text: str) -> str:
     """Return ``"exact"`` (span + value grounded), ``"value_only"`` (value grounded, span
     paraphrased — still trustworthy), or ``"ungrounded"`` (no evidence, or the value is not
@@ -81,4 +128,4 @@ def grade(claim: ClaimOut, chunk_text: str) -> str:
     return GRADE_EXACT if _span_in_chunk(claim.evidence, chunk_text) else GRADE_VALUE_ONLY
 
 
-__all__ = ["grade", "GRADE_EXACT", "GRADE_VALUE_ONLY", "GRADE_UNGROUNDED"]
+__all__ = ["grade", "locate_span", "GRADE_EXACT", "GRADE_VALUE_ONLY", "GRADE_UNGROUNDED"]

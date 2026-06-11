@@ -378,3 +378,9 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   banners). The smoke builder filters by `manifest.py` source_uris; the **sample** manifest does NOT
   include the image, so image facts only land in smoke. A guard (`test/golden/test_golden.py`) pins the
   image **caption** fact to `recall_bar:false` while allowing structured datapoint facts to be graded.
+- Seeded `reports_to`/`dotted_line_to` edges are seeded **undated** (`as_of=None`, SP_011)
+  so the cited edge extracted from `org-chart.md` (export-dated) doesn't dedupe away against
+  them on the links natural key (`COALESCE(as_of,'0001-01-01')`). Consequence: a DB seeded
+  *before* this change must be **re-seeded fresh** (or have its stamped reporting rows
+  dropped) — changing the `as_of` changes the natural key, so a re-seed *adds* an undated
+  twin instead of being a no-op. Fresh `make up && seed` is unaffected.

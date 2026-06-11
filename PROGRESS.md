@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-10
+last-reconciled: 2026-06-11
 authoritative-for: [active-sprint, sprint-history]
 ---
 
@@ -12,21 +12,27 @@ authoritative-for: [active-sprint, sprint-history]
 
 **Current:** SP_016
 **Started:** 2026-06-10
-**Stage:** Phase A code complete — pending operator live deploy (Phases B/C operator-gated)
+**Stage:** Phase B/C in progress — recall+image line (SP_017–021) integrated with main's SP_011/013; governed full-corpus load + live verify next.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
-SP_016 — Functional live system — gated deploy. Phase A code complete:
-  - `deploy/deploy.sh` decoupled from full ingest (no more unguarded `helixpay ingest ./data`).
-  - `.github/workflows/deploy.yml` CI/CD deploy job wired (gated on gateway job).
-  - `scripts/verify_mcp.py` MCP agent-reachability verifier (streamable-HTTP, exits non-zero on failure).
-  - `scripts/prod_seed.sh` production seed transfer (pg_dump → restore, SP015 proof guard).
-  - `deploy/tests/test_infra_contract.py` extended with SP_016 invariants.
-  - `test/unit/scripts/test_verify_mcp.py` and `test_prod_seed.py` new unit tests.
-  - `workspace/acceptance/SP016_live_verification.md` signed-artifact template with exact operator steps.
-  - Meta-docs reconciled (Rule 16).
-  Phases B + C (full corpus load + live eval) are operator-gated — pending operator smoke.
-  Plan: `workspace/sprints/SP_016_live_deploy.md`.
+SP_016 — Functional live system — gated deploy. Phase A complete (deploy.sh decoupled
+from full ingest; CI deploy job; `scripts/verify_mcp.py`; `scripts/prod_seed.sh`;
+`deploy/tests/test_infra_contract.py` invariants; `SP016_live_verification.md`). Phase B/C
+(full corpus load + live eval) now executing: the recall+image work — SP_017 (test
+hygiene), SP_018 (RDD/SRP split), SP_019 (metric-subject attribution), SP_020 (mint-time
+dedup), SP_021 (structured image extraction) — has been integrated with main's SP_011
+(provenance-on-write) and SP_013 (eval rigor) ahead of the governed full run.
+Plan: `workspace/sprints/SP_016_live_deploy.md`.
+
+Prior: SP_011 — Provenance Persist (ingest side): claims carry the verbatim `evidence`
+span + located char offsets; links carry `document_id`; a graph-contradiction sweep
+(`detect_link_conflicts`, reports_to-only) makes reporting conflicts first-class; seeded
+reporting edges are emitted undated so the cited org-chart edge coexists (corroborate, not
+replace). SP_013 — eval rigor (Wilson CI, macro recall, 3-class contradiction, collisions)
++ ingest compute-idempotency. SP_010 — recall fixes + the $0 replay tier + the planted
+Confluence GA contradiction. SP_009 — provenance contracts/schema v2 (evidence/offsets,
+link `document_id`, link-pair contradictions) + the shared `normalize` util.
 
 Prior: SP_008 — DEV_RULES Reinforcement. SP_001 — Phase 0 Gate.
 

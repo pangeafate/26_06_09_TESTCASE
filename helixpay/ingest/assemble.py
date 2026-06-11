@@ -32,8 +32,18 @@ def build_claim(
     chunk_id: int,
     document_id: int,
     doc_as_of: Optional[date],
+    evidence: Optional[str] = None,
+    char_start: Optional[int] = None,
+    char_end: Optional[int] = None,
 ) -> Claim:
-    """Assemble a value-claim from a resolved extraction item."""
+    """Assemble a value-claim from a resolved extraction item.
+
+    Provenance v2 (SP_011): ``evidence`` is the model's verbatim grounding span and
+    ``char_start``/``char_end`` are its located offsets into the source chunk (``None`` when
+    the span is a paraphrase that is not a contiguous substring — the evidence text is still
+    stored). The caller computes the offsets (``grounding.locate_span``) and passes them in,
+    keeping this helper a pure field-mapper.
+    """
     return Claim(
         subject_entity_id=subject_id,
         predicate=predicate,
@@ -42,6 +52,9 @@ def build_claim(
         confidence=claim_out.confidence,
         source_chunk_id=chunk_id,
         document_id=document_id,
+        evidence=evidence,
+        char_start=char_start,
+        char_end=char_end,
     )
 
 
@@ -51,12 +64,16 @@ def build_link(
     from_id: int,
     to_id: int,
     chunk_id: int,
+    document_id: Optional[int] = None,
     doc_as_of: Optional[date],
 ) -> Optional[Link]:
     """Assemble a typed relation, or ``None`` for a self-loop.
 
     A self-loop (both surface forms collapsing to one entity) would corrupt the org graph
     and risk recursive-CTE cycles — the caller drops it (log-only, no counter).
+
+    Provenance v2 (SP_011): ``document_id`` records the source document of the link so link
+    contradictions carry the same provenance as claim contradictions.
     """
     if from_id == to_id:
         return None
@@ -67,6 +84,7 @@ def build_link(
         as_of=rel.as_of_date() or doc_as_of,
         confidence=rel.confidence,
         source_chunk_id=chunk_id,
+        document_id=document_id,
     )
 
 

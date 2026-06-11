@@ -23,9 +23,10 @@ from typing import Callable, Iterable, Optional, Protocol
 
 from helixpay.contracts import Chunk, Claim, Document, Repository, SourceConnector
 from helixpay.ingest.assemble import build_claim, build_link, should_supersede
-from helixpay.ingest.contradict import detect
+from helixpay.ingest.contradict import detect, detect_link_conflicts
 from helixpay.ingest.embed import VoyageEmbedder
 from helixpay.ingest.extract.extractor import ChunkContext, ChunkExtractor
+from helixpay.ingest.extract.grounding import locate_span
 from helixpay.ingest.extract.ledger import LossLedger
 from helixpay.ingest.extract.schemas import ClaimOut
 from helixpay.ingest.repair import is_known_metric, repair_metric_subject
@@ -86,6 +87,9 @@ class IngestReport:
     dropped_mentions: int = 0
     touched_groups: set[tuple[int, str]] = field(default_factory=set)
     ledger: Optional[LossLedger] = None
+    # (from_entity_id, link_type) groups touched this run — the link-contradiction sweep
+    # (SP_011) mirrors ``touched_groups`` for the claim sweep.
+    touched_link_groups: set[tuple[int, str]] = field(default_factory=set)
 
 
 class _Embedder(Protocol):  # structural seam for typing/injection
@@ -165,6 +169,11 @@ def run(
     for subject_id, predicate in report.touched_groups:
         report.contradictions += detect(repo, subject_id, predicate)
 
+    # graph-contradiction sweep over every (from_entity, link_type) we touched (SP_011):
+    # mirrors the claim sweep so reporting conflicts surface the same way value conflicts do.
+    for from_entity_id, link_type in report.touched_link_groups:
+        report.contradictions += detect_link_conflicts(repo, from_entity_id, link_type)
+
     # attach the extraction loss ledger (guarded: stub extractors in unit tests may not
     # have a .ledger attribute, so getattr keeps test_pipeline.py green without edits)
     ledger = getattr(ext, "ledger", None)
@@ -228,6 +237,11 @@ def _ingest_document(
                 report.dropped_mentions += 1
                 continue
             predicate = repo.canonical_predicate(claim_out.predicate)
+            # Provenance v2 (SP_011): keep the model's verbatim grounding span and locate
+            # its raw offsets into this chunk's text. A paraphrased span that isn't a
+            # contiguous substring yields None offsets — the evidence text is still stored.
+            span = locate_span(claim_out.evidence, chunk.text)
+            char_start, char_end = span if span is not None else (None, None)
             claim = build_claim(
                 claim_out,
                 subject_id=subject_id,
@@ -235,6 +249,9 @@ def _ingest_document(
                 chunk_id=chunk_id,
                 document_id=doc_id,
                 doc_as_of=doc.as_of,
+                evidence=claim_out.evidence,
+                char_start=char_start,
+                char_end=char_end,
             )
             new_id = repo.add_claim(claim)
             report.claims += 1
@@ -247,7 +264,9 @@ def _ingest_document(
             if from_id is None or to_id is None:
                 report.dropped_mentions += 1
                 continue
-            link = build_link(rel, from_id=from_id, to_id=to_id, chunk_id=chunk_id, doc_as_of=doc.as_of)
+            link = build_link(
+                rel, from_id=from_id, to_id=to_id, chunk_id=chunk_id, document_id=doc_id, doc_as_of=doc.as_of
+            )
             if link is None:
                 # a self-loop (e.g. two surface forms collapsing to one entity) would
                 # corrupt the org graph and risk recursive-CTE cycles — drop it.
@@ -255,6 +274,7 @@ def _ingest_document(
                 continue
             repo.add_link(link)
             report.links += 1
+            report.touched_link_groups.add((from_id, rel.link_type))
 
 
 def _maybe_supersede(

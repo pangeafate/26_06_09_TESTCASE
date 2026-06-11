@@ -10,11 +10,11 @@ grader for the adversarial stage.
 
 | File | What it is |
 |------|------------|
-| `../test/golden/facts.yaml` | The golden ground truth — ≥12 by-eye facts, ≥1 per source format, plus the real planted contradiction. |
-| `questions.yaml` | The deep-question set, each with `checks:` exercising one failure mode. |
-| `run.py` | The two-level autotest harness (extraction recall/precision + answer checks). |
-| `models.py` | Typed records (pydantic over the YAML) + report types. |
-| `../test/golden/test_*.py` | Tests of the **grader itself** (a wrong oracle is worse than none). |
+| `../test/golden/facts.yaml` | The golden ground truth — **≥30 by-eye bar facts, ≥2 per source format**, the real planted contradiction, plus `predicate_synonyms` (ARR ≡ "annual recurring revenue") and `entity_collisions` (two Marias / two Tans). |
+| `questions.yaml` | The deep-question set, each with `checks:` exercising one failure mode (incl. a prefer-fresh-and-say-so freshness question, distinct from the surface-both contradiction case). |
+| `run.py` | The two-level autotest harness — extraction recall/precision **+ Wilson CIs + macro-per-predicate recall**, answer checks, **WikiContradict 3-class contradiction scoring**, entity-collision + As-of-Correctness reporting. |
+| `models.py` | Typed records (pydantic over the YAML) + report types (`wilson_interval`, `ContradictionClass`, …). |
+| `../test/golden/test_*.py` | Tests of the **grader itself** (a wrong oracle is worse than none) — `test_rigor.py` covers the SP_013 statistical + structural checks. |
 
 ## Run it
 
@@ -36,18 +36,28 @@ grades; tests inject a stub engine.
 ## The recall bar
 
 **Golden-set recall must be ≥ 80%** for `/goal` to go green (`DEFAULT_RECALL_BAR` in
-`run.py`). 15 facts are on the bar (the 16th, an image caption, is informational —
+`run.py`). **39 facts are on the bar** (the 40th, an image caption, is informational —
 deep JPEG figure extraction is a SPEC §11 scope cut, so it does not count). 80% = at
-most 3 of 15 bar facts may be missed. The bar is deliberately below 100% because a few
+most ~7 of 39 bar facts may be missed. The bar is deliberately below 100% because a few
 facts depend on entity resolution the extractor legitimately may not nail on the first
 pass (customer entities, the "HelixPay" company entity — see findings); it is high
 enough that the org hierarchy, the financial headline metrics, the customer-ownership
 links, and **both sides of the planted contradiction** must all land.
 
+The set was grown from 15 → 39 bar facts (SP_013) because *a dozen facts cannot support a
+recall bar* — one miss was an 8-point swing (per the evaluation & ground-truth
+best-practices research note, P0 #1). The harness now reports a **Wilson 95% confidence
+interval** and **macro-per-predicate recall** alongside the point estimate, so the bar is
+read with its uncertainty, not as a bare ratio.
+
 ### Precision / recall, defined
 
-- **recall** = `FOUND / bar facts` — the fraction of golden facts present in the
-  ontology with the right value + source (+ `as_of`).
+- **recall** (micro) = `FOUND / bar facts` — the fraction of golden facts present in the
+  ontology with the right value + source (+ `as_of`). Reported with its **Wilson 95% CI**.
+- **macro recall** = mean of per-predicate recall, weighting every predicate equally — it
+  surfaces a rare-predicate miss (e.g. `dotted_line_to` recall 0) that a micro score
+  dominated by the common predicates would hide. The rendered report lists per-predicate
+  recall worst-first.
 - **golden-set precision** = `FOUND / (FOUND + MISMATCH)` — of the golden subjects the
   extractor *attempted* (a claim/link on the right `(subject, predicate)` exists), the
   fraction it got *right*. This is **not** corpus precision (we don't enumerate every
@@ -56,9 +66,50 @@ links, and **both sides of the planted contradiction** must all land.
   claim/link on the right subject+predicate exists but the value, source, `as_of`, or
   link direction is wrong) · **MISSING** (nothing — subject unresolved or no claim).
 
-`as_of` matching uses the **fact's effective date** (e.g. Q1 metrics → `2026-03-31`),
-and also accepts the date carried on the claim's source citation as a documented
-fallback (a dashboard exported `2026-04-21` reporting a Q1 figure may stamp either).
+> **CI caveat (stated, not hidden):** Wilson assumes i.i.d. Bernoulli trials, but golden
+> facts are **clustered by source document**, so the true standard error is wider than the
+> reported interval. The rendered report prints this caveat inline.
+
+### The match function (specified, not implicit)
+
+A golden fact MATCHES a claim/link iff **all** of:
+
+- **subject** — resolved `entity_id` equal (`Repository.resolve_entity` with the fact's
+  `source_uri` as context). Asserting the resolved id (not the string) is what keeps the
+  two Marias / two Tans distinct.
+- **predicate** — `canonical_predicate(fact) == canonical_predicate(claim)`.
+- **value** — numeric equality via the **shared** `helixpay.ingest.normalize.values_equal`
+  (currency / magnitude / word-number / unicode-minus aware), with a documented substring
+  fallback for free **text** (dates/labels the numeric path can't compare). When both sides
+  are pure numbers the numeric verdict is final (no substring fallback — so `"41"` never
+  matches `"241"`).
+- **source_uri** — same basename, or the golden URI is a substring of the claim's.
+- **as_of** — `AS_OF_TOLERANCE_DAYS` (default **0** — exact) against the claim's own date
+  **or** any of its source-citation dates (a dashboard exported `2026-04-21` reporting a Q1
+  figure may stamp either the export date or the period end `2026-03-31`).
+
+> **Shared-normalizer coupling (by design).** The matcher reuses `values_equal` so
+> predicted-vs-gold equivalence cannot drift from contradiction detection. `normalize.py`'s
+> own docstring names the eval matcher as an intended consumer, so it is shared substrate,
+> not a build slice — but to preserve oracle-independence the grader keeps its **own**
+> equality assertion (eval-authored golden pairs in `test_rigor.py`), so a normalizer
+> regression is still caught by the oracle's tests.
+
+### Contradiction scoring (WikiContradict 3-class)
+
+Beyond the `/goal` floor ("≥1 real contradiction surfaced"), each planted contradiction a
+question references is scored **Correct** (the right subject+predicate conflict is surfaced
+AND references **both** distinct claim ids), **Partial** (surfaced but only one side carries
+a claim id), or **Incorrect** (no matching contradiction → a silent merge). Scoring is
+subject-aware: a conflict on the wrong entity does not earn credit.
+
+### Freshness vs contradiction (As-of Correctness)
+
+Freshness is scored **apart** from contradiction (research P1 #6): a *prefer-fresh-and-
+say-so* question (`q-latest-revenue-freshness`: Q1 14.2M is fresher than Q4 15.4M, and they
+are NOT a conflict) feeds an **As-of Correctness** count, distinct from the surface-both
+contradiction question. A system that always returns the newest value scores well on
+freshness but must still surface genuine conflicts.
 
 ## The honest-oracle correction (read this)
 
