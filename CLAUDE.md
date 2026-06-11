@@ -382,6 +382,24 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   `org-chart.md` edge doesn't dedupe away on the links natural key (`COALESCE(as_of,'0001-01-01')`). A DB
   seeded *before* this must be **re-seeded fresh** (changing `as_of` changes the key → a re-seed adds an
   undated twin, not a no-op). Fresh `make up && seed` unaffected.
+- **Contradiction precision: the recompute sweep is the canonical post-ingest step (SP_028a):**
+  inline ingest-time `detect()` writes raw, inflated rows; `scripts/recompute_contradictions.py`
+  is the single-writer **clear-then-rewrite** sweep that produces the deployed set, and MUST run
+  after ingest (it took the live `helixpay_full` from **266 → 115** at $0). It applies two
+  deterministic precision levers without touching `detect()`/`detect_link_conflicts()` (a thin
+  `_DedupWriter` wraps the repo): (1) **cardinality skip** — a claim group whose predicate is
+  explicitly `set_valued` in `helixpay/ingest/predicate_cardinality.py` (pain_point, weekly_activity,
+  …) is skipped (multiplicity is legitimate); applied to the CLAIM loop ONLY (links keep their
+  `_SINGLE_VALUED_LINK_TYPES` gate); unknown/functional/breakdown all KEEP (safe default — never
+  silently drop a real conflict; `breakdown` like `gross_revenue` is classified-but-not-skipped
+  because it's also a real company metric). (2) **value-pair dedup** — one row per distinct
+  normalized value-pair (claims) / to-entity pair (links), collapsing the pairwise inflation
+  (ga_target 86 = one story × many source-combos). The residual (distinct *phrasings* of one
+  semantic conflict, e.g. "end of Q3" vs "Sep 30") is left for SP_028b's LLM pass. Normalizer
+  sign-fix (`normalize.py` step 6b: `(?<=-)\s+(?=\d)`) lets `-SGD 2.1M` parse like `SGD -2.1M` so
+  the ebitda sign/currency-order spurious class agrees. **Do NOT** add date-format or rounding
+  equivalence to the shared `normalize.py` — it has 8 callers incl. the eval matcher, and
+  `2026-05-12 ≡ May 12` drops the year → cross-year false-equality suppresses real conflicts.
 - **The extraction prompt was leaking ground truth, and a guard now blocks it (SP_027):** SP_019's
   "re-record prompt surgery" (and later SP_021/SP_026) built few-shot examples from **real graded
   corpus facts** — `extract_claims.md` literally showed the model `HelixPay revenue SGD 14.2M @

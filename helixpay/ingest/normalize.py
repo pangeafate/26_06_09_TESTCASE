@@ -157,6 +157,13 @@ def normalize_value(value: Optional[str]) -> tuple[str, Optional[float]]:
     #    preserved by _ANNOTATION_PAREN's letter requirement.
     cleaned = _ANNOTATION_PAREN.sub(" ", _CURRENCY.sub(" ", text))
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # 6b. (SP_028a) glue a leading minus back onto its digits. Stripping a currency that sat
+    #     between the sign and the number ("-SGD 2.1M" → "- 2.1m") leaves a space that breaks
+    #     _PURE_NUM_RE's adjacent `-?\d`, so the value fell to a text compare and a sign/
+    #     currency-order variant read as a spurious conflict (the ebitda rows). Lookbehind is
+    #     `-` only (matches `_PURE_NUM_RE`'s `-?\d`; `+` is not a magnitude sign here). Applied
+    #     to the numeric copy only — `text` is untouched, so text-only values never change.
+    cleaned = re.sub(r"(?<=-)\s+(?=\d)", "", cleaned)
     return text, _parse_number(cleaned)
 
 

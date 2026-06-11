@@ -215,3 +215,36 @@ def test_accounting_negative_parens_not_treated_as_annotation():
         )
         is True
     )
+
+
+# --------------------------------------------------------------------------- #
+# SP_028a — sign/currency-position equivalence (the ebitda 16-row spurious class) #
+# --------------------------------------------------------------------------- #
+def test_sign_before_currency_equals_currency_before_sign():
+    # "-SGD 2.1M" and "SGD -2.1M" are the SAME negative value — only the sign/currency
+    # order differs. Today the former fails the numeric parse (currency strip leaves
+    # "- 2.1m" with a space) and the two compare as unequal text → a spurious conflict.
+    assert values_conflict("-SGD 2.1M", "SGD -2.1M") is False
+    assert normalize_value("-SGD 2.1M")[1] == pytest.approx(-2_100_000.0)
+
+
+def test_sign_flip_is_still_a_real_conflict():
+    # A genuine sign flip must remain a conflict (regression anchor; passes pre-impl too).
+    assert values_conflict("-SGD 2.1M", "SGD 2.1M") is True
+
+
+def test_two_different_negatives_still_conflict():
+    assert values_conflict("-SGD 2.1M", "-SGD 3.0M") is True
+
+
+def test_sign_after_currency_unaffected_by_glue():
+    # The already-working "SGD -2.1M" (sign adjacent to digits) must be unchanged.
+    assert normalize_value("SGD -2.1M")[1] == pytest.approx(-2_100_000.0)
+    assert values_conflict("SGD -2.1M", "SGD -2.1M") is False
+
+
+def test_bare_minus_space_digit_parsed_as_number():
+    # SP_028a step 6b glues the space in "- 5" even when no currency was stripped — correct:
+    # "- 5" and "-5" are the same value, not conflicting text. (Documents the side effect.)
+    assert normalize_value("- 5")[1] == pytest.approx(-5.0)
+    assert values_conflict("- 5", "-5") is False
