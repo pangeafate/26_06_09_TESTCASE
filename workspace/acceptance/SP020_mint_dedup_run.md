@@ -32,13 +32,16 @@ the replay ran with CWD `/app/eval/smoke`, so `python -m helixpay.ingest.replay`
 **baked/installed** `helixpay` (old `resolve.py`), not the host-mounted edit — the mint-time
 dedup never executed. Re-running with `PYTHONPATH=/app` used the live code → one row → 11/11.
 
-## On the paid re-record
+## PAID re-record confirmation (operator-approved, 2026-06-11)
 
-SP_020 changed **only resolution** (`resolve.py`), not extraction (no prompt change). The $0
-replay already exercises the live `resolve.py` against the real cached extractions and shows
-11/11 with no hardcode — so it is the authoritative test for this change. A paid re-record would
-re-run the (unchanged) extraction at cost and only add LLM-variance noise; it does not test the
-SP_020 change. The earlier SP_019 paid re-record already validated extraction at 11/11.
+Belt-and-suspenders: a full paid re-record (`run_smoke.py --record --force`, Sonnet extract +
+Voyage embed, **`PYTHONPATH=/app`** so the live `resolve.py` runs during resolution) — fresh LLM
+extraction + live mint-time dedup, no seed. All 9 docs `empty_extractions=0 truncated=0`.
+
+**Golden recall 11/11 (100%), precision 100%, mismatch=0 — `email-acai-owner` FOUND with exactly
+one Açaí row (`id 678, customer, seeded=false`).** Confirms end-to-end that the general mint-time
+dedup recovers the account link on a fresh extraction with the hardcode removed. (SP_020 is
+resolution-only, so the $0 replay above was already authoritative; this just removes all doubt.)
 
 ## Reproduction ($0)
 
