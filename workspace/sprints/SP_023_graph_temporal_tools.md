@@ -287,5 +287,12 @@ Foundational ⇒ ≥2 independent iterations; plan-blind (Rule 5 — reviewer se
 
 - Reconcile: `CLAUDE.md` (MCP tool list eight→twelve + a gotcha on the period-strip match and
   the both-directions traversal), `SOLUTION.md`/README if they enumerate tools.
-- Deploy: **held** — the operator asked for *develop + implement + test* only. Deployment via
-  push → CI `Deploy to Production` is a separate, explicitly-gated step.
+- Deploy: **Deployed + verified 2026-06-11.** Operator approved ("Deploy"). Canonical FF push of
+  `b91a67a` → `origin/main` → CI `Deploy to Production` green (gateway 21s via uv + deploy 48s:
+  rsync → `deploy.sh` → `/health` 200). Live probe of `https://helixpay.serverado.app/mcp`:
+  `tools/list` now returns **12 tools** (was 8); the four new tools
+  (`get_timeline`/`get_relationships`/`list_metrics`/`get_claims_by_predicate`) are present and
+  return `available:true` on the real `HelixQueryEngine`; `verify_mcp.py` exit 0. Results are over
+  the **seeded backbone** (full-corpus extraction remains the separately-gated paid step). The
+  local pre-push gateway was bypassed (audited: system-python no-deps false failure; `b91a67a`
+  verified green via uv; CI authoritative per Rule 11).
