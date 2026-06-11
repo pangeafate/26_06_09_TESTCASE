@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Callable as a reusable workflow so deploy.yml can gate its deploy job on this
+  # gateway (`gateway: uses: ./.github/workflows/dev-rules-ci.yml`). Without this
+  # trigger the reusable reference is invalid and the Deploy workflow fails to launch
+  # ("workflow file issue", 0s) — which is why CI had never actually deployed.
+  workflow_call:
 
 jobs:
   gateway:
