@@ -4,7 +4,7 @@ tier: Foundational
 features: [decouple-deploy-from-fullrun, ci-deploy-job, app-live-mcp, governed-full-run, prod-seed-transfer, live-behavioral-closure]
 user_stories: []
 schema_touched: false
-structure_touched: true
+structure_touched: false
 status: In Progress
 isolation: branch-only
 branch: sprint/SP_016-live-deploy

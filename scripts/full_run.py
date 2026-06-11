@@ -110,7 +110,9 @@ def _default_record_runner() -> None:
     constructs the paid client (`replay`/`AnthropicClient`)."""
     from helixpay.ingest.replay import main as replay_main
 
-    replay_main(["record", "./data", "--cache-dir", "./.replay-cache"])
+    # root "data" (not "./data") so source_uris are "data/<sub>" — matching the golden oracle,
+    # the smoke harness convention, and the replay-cache key scheme (SP_025).
+    replay_main(["record", "data", "--cache-dir", "./.replay-cache"])
 
 
 def main(

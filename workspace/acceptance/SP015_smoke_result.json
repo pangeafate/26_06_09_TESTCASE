@@ -1,0 +1,121 @@
+{
+  "all_green": true,
+  "docs": {
+    "data/board-deck-q1-2026.pdf": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [
+        "4 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/board-deck-q1-2026.pdf",
+      "verdict": "PASS"
+    },
+    "data/chat/sales-floor-april.md": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [],
+      "source_uri": "data/chat/sales-floor-april.md",
+      "verdict": "PASS"
+    },
+    "data/code/contributors-analysis-q1-2026.md": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [
+        "3 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "verdict": "PASS"
+    },
+    "data/dashboards/april-2026-kpi-dashboard.html": {
+      "golden": {
+        "found": 2,
+        "precision": 1.0,
+        "total": 2
+      },
+      "reasons": [
+        "3 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "verdict": "PASS"
+    },
+    "data/email/customer-acai-express-thread.md": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [
+        "4 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/email/customer-acai-express-thread.md",
+      "verdict": "PASS"
+    },
+    "data/images/revenue-trend-q1-2026.jpeg": {
+      "golden": {
+        "found": 2,
+        "precision": 1.0,
+        "total": 2
+      },
+      "reasons": [
+        "10 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/images/revenue-trend-q1-2026.jpeg",
+      "verdict": "PASS"
+    },
+    "data/interviews/sales/maria-silva.md": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [],
+      "source_uri": "data/interviews/sales/maria-silva.md",
+      "verdict": "PASS"
+    },
+    "data/org-chart.md": {
+      "golden": {
+        "found": 3,
+        "precision": 1.0,
+        "total": 3
+      },
+      "reasons": [],
+      "source_uri": "data/org-chart.md",
+      "verdict": "PASS"
+    },
+    "data/overview.md": {
+      "golden": {
+        "found": 1,
+        "precision": 1.0,
+        "total": 1
+      },
+      "reasons": [
+        "1 intentional drop(s) (hypothetical/ungrounded) \u2014 expected, not blocking"
+      ],
+      "source_uri": "data/overview.md",
+      "verdict": "PASS"
+    }
+  },
+  "fingerprint": {
+    "data/board-deck-q1-2026.pdf": "616108a42948f1b8d0760edc4bbc0b160d51401a628cc7fde1f146263a603e7b",
+    "data/chat/sales-floor-april.md": "091583bc2a1950075b4410c6ed70ea3c03f387748e8a5bfb988edc74e47531a3",
+    "data/code/contributors-analysis-q1-2026.md": "d3292c4168002b5c6a643d15e83ce4df335ba1e769e546ac6b83d34d964547e6",
+    "data/dashboards/april-2026-kpi-dashboard.html": "50df3c14bb83e68aa0cf9ff48ee053ac122e854f9b71deadf401e8df1ef027e6",
+    "data/email/customer-acai-express-thread.md": "03a65ba152885746b40f1f7a14a96aafbae71bbf5e12a259c316131a4122c259",
+    "data/images/revenue-trend-q1-2026.jpeg": "5617037e69b6f2a6c5b2fcbb576efc0be01e8469f2a0584b5cda286a5e80a0a2",
+    "data/interviews/sales/maria-silva.md": "63f0cc79f7013bc0599094c94470502616dd60e1eb4c71a54a927a1c003498bf",
+    "data/org-chart.md": "94c2311d195ce9836e24c19374ed175b14a15bde9a90a5ec3e74e3ad216dbcc8",
+    "data/overview.md": "5a38ac2ea30dd48f6e459736ae23cc5c4301eeda05f914647280bfe754985324"
+  },
+  "passed": 9,
+  "sprint": "SP_015",
+  "total": 9
+}

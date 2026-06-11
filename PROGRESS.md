@@ -10,31 +10,41 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_016
-**Started:** 2026-06-10
-**Stage:** Phase B/C in progress — recall+image line (SP_017–021) integrated with main's SP_011/013; governed full-corpus load + live verify next.
+**Current:** SP_028b
+**Started:** 2026-06-11
+**Stage:** Complete — LLM contradiction adjudication (paid refiner on the SP_028a deterministic sweep). Deploy gated; live full-corpus re-record/verify pending operator.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 
-SP_016 — Functional live system — gated deploy. Phase A complete (deploy.sh decoupled
-from full ingest; CI deploy job; `scripts/verify_mcp.py`; `scripts/prod_seed.sh`;
-`deploy/tests/test_infra_contract.py` invariants; `SP016_live_verification.md`). Phase B/C
-(full corpus load + live eval) now executing: the recall+image work — SP_017 (test
-hygiene), SP_018 (RDD/SRP split), SP_019 (metric-subject attribution), SP_020 (mint-time
-dedup), SP_021 (structured image extraction) — has been integrated with main's SP_011
-(provenance-on-write) and SP_013 (eval rigor) ahead of the governed full run.
-Plan: `workspace/sprints/SP_016_live_deploy.md`.
+SP_028b — LLM contradiction adjudication. `helixpay/ingest/adjudicate.py` +
+`scripts/adjudicate_contradictions.py`: a post-ingest, single-writer clear-then-rewrite
+pass (runs AFTER `recompute_contradictions.py`) that judges each subject's cluster with one
+Opus(temp-0) call — DROPS same-fact-different-words lexical candidates (precision) and ADDS
+cross-predicate claim pairs + solid-vs-dotted link pairs (recall), never resolving. Two
+labeled blocks (CLAIM/LINK) so a claim↔link pair is structurally impossible; content-hash
+cache keyed on `(model, PROMPT_VERSION, NORM_VERSION, member signatures)` with `source_uri`
+excluded → re-sweep of an unchanged store is $0; verdict-absent falls back to the SP_028a
+deterministic floor (`helixpay/ingest/dedup.py`). All code/unit/db tests are $0 (stub
+client); paid Opus is the gated CLI only. `--model` override (Sonnet) + model in the cache
+key. Plan: `workspace/sprints/SP_028b_llm_adjudication.md`.
 
-Prior: SP_011 — Provenance Persist (ingest side): claims carry the verbatim `evidence`
-span + located char offsets; links carry `document_id`; a graph-contradiction sweep
-(`detect_link_conflicts`, reports_to-only) makes reporting conflicts first-class; seeded
-reporting edges are emitted undated so the cited org-chart edge coexists (corroborate, not
-replace). SP_013 — eval rigor (Wilson CI, macro recall, 3-class contradiction, collisions)
-+ ingest compute-idempotency. SP_010 — recall fixes + the $0 replay tier + the planted
-Confluence GA contradiction. SP_009 — provenance contracts/schema v2 (evidence/offsets,
-link `document_id`, link-pair contradictions) + the shared `normalize` util.
+Prior (contradiction precision line): SP_028a — deterministic precision sweep:
+`scripts/recompute_contradictions.py` is the canonical single-writer clear-then-rewrite
+post-ingest step (cardinality skip + value-pair dedup) — took live `helixpay_full` from
+**266 → 115** at $0. SP_028 — plan + Stage-3 review (split into 028a/028b recommended).
 
-Prior: SP_008 — DEV_RULES Reinforcement. SP_001 — Phase 0 Gate.
+Prior (recall + exposure line): SP_019 metric-subject attribution; SP_020 mint-time dedup
+(removed the Açaí hardcode, fixed the class at mint); SP_021 structured image/chart
+extraction (graded by source); SP_022/SP_023 MCP retrieval + graph/temporal tools (12 tools
+on `ExposureEngine`); SP_024 drop-taxonomy gate; SP_025 coercion recovery (entity-collapse
+guard); SP_027 de-leak extraction prompt + golden-leak guard.
+
+Prior: SP_016 — Functional live system, gated deploy (Phase A complete; B/C operator-gated).
+SP_011 — Provenance Persist (evidence spans + offsets, link `document_id`,
+`detect_link_conflicts`, undated seeded reporting edges). SP_013 — eval rigor (Wilson CI,
+macro recall, 3-class contradiction) + ingest compute-idempotency. SP_010 — recall fixes +
+$0 replay tier + planted Confluence GA contradiction. SP_009 — provenance contracts/schema
+v2 + shared `normalize` util. SP_008 — DEV_RULES Reinforcement. SP_001 — Phase 0 Gate.
 
 ## Phase 1 Integration
 
@@ -52,6 +62,126 @@ app live with the seeded backbone only; the full corpus (44 docs) loads via
 operator-gated (see `workspace/acceptance/SP016_live_verification.md`).
 
 ## Sprint History
+
+### SP_024–028 merge gate + production deploy
+
+- **Status**: Complete — **deployed to production main** (`b0d0c7f`)
+- **Tier**: governance / release
+- **Date**: 2026-06-11
+- **Summary**: A 5-agent plan-blind evaluation cleared the SP_024–028b line for merge.
+  Three merge-gate fixes: CLAUDE.md trimmed 25,077 → ~18,300 bytes (under the 20k hard limit;
+  verbose gotchas archived full-fidelity to `workspace/CLAUDE_GOTCHAS.md`), the missing SP_026
+  plan back-filled, and SP_028a's 2nd Stage-5 iteration recorded. `origin/main` had been a
+  deliberate net-null SP_023 pin (`696e502` plan-doc checkpoint reverted by `858f539`);
+  integrated via a non-destructive `-s ours` merge (nothing lost). CI Deploy-to-Production
+  green, live `/health` 200. Deploy is code-only/$0: idempotent migrate (additive
+  `links.raw_verb`) + re-seed, no paid ingest; the live 67 contradictions unchanged.
+
+### SP_028b: LLM contradiction adjudication — paid refiner on the SP_028a sweep
+
+- **Status**: Complete
+- **Tier**: Foundational (2-iteration Stage-3 review)
+- **Date**: 2026-06-11
+- **Summary**: `helixpay/ingest/adjudicate.py` + `scripts/adjudicate_contradictions.py` — a
+  post-ingest single-writer clear-then-rewrite pass (after `recompute_contradictions.py`)
+  judging each subject's cluster with one Opus(temp-0) call: DROPS same-fact-different-words
+  lexical candidates (precision), ADDS cross-predicate claim pairs + solid-vs-dotted link
+  pairs (recall), never resolving (schema has no winner field). Two labeled blocks
+  (CLAIM `C1..Cn` / LINK `L1..Lm`) make a claim↔link pair structurally impossible;
+  signature-sorted members keep the index map stable across re-seed id churn. Content-hash
+  cache keyed on `(model, PROMPT_VERSION, NORM_VERSION, member signatures)` with `source_uri`
+  excluded → re-sweep of an unchanged store is $0. Verdict-absent → SP_028a deterministic
+  floor (`helixpay/ingest/dedup.py`); present-but-empty is authoritative. `--model` override
+  (Sonnet) with the model in the cache key; `MAX_CLUSTER_MEMBERS=40` (oversized subjects fall
+  to the floor and are logged). Prompt uses only synthetic (year-2099) values so the SP_027
+  leak guard stays green. All code/unit/db tests are $0 (stub client); paid Opus is the gated
+  CLI only.
+- **Deploy outcome (2026-06-11)**: ran the paid sweep with **Sonnet** (operator choice; model
+  rides in the cache key) on live `helixpay_full` — **115 → 67 contradictions**, oracle recall
+  **1/8 → 2/8** (cross-predicate `maria-santos-dual-line` caught; baseline floor preserved).
+  Merged to production main at the SP_024–028 merge gate.
+
+### SP_028a: deterministic contradiction precision sweep — 266 → 115 at $0
+
+- **Status**: Complete
+- **Tier**: Foundational
+- **Date**: 2026-06-11
+- **Summary**: `scripts/recompute_contradictions.py` — the canonical single-writer
+  clear-then-rewrite post-ingest sweep that produces the deployed contradiction set (took
+  live `helixpay_full` from **266 → 115** at $0). Two deterministic precision levers via a
+  thin `_DedupWriter` (no change to `detect()`): (1) cardinality skip for predicates
+  explicitly `set_valued` in `predicate_cardinality.py` (claims loop only; links keep their
+  single-valued gate; unknown/functional/breakdown all KEEP); (2) value-pair dedup — one row
+  per distinct normalized value-pair / to-entity pair. Normalizer sign-fix
+  (`normalize.py` step 6b) so `-SGD 2.1M` parses like `SGD -2.1M`. SP_028 (parent) was the
+  plan + Stage-3 review that recommended the 028a/028b split.
+
+### SP_027: de-leak extraction prompt — synthetic examples + golden-leak guard
+
+- **Status**: Complete
+- **Tier**: Standard
+- **Date**: 2026-06-11
+- **Summary**: SP_019/021/026 prompt surgery had built few-shot examples from real graded
+  corpus facts (15 golden bar-fact values + 3 graded subjects), coaching the extractor with
+  answers it is later graded on (DEV_RULES §12). Replaced every example with synthetic,
+  year-shifted (2027) subjects/values teaching the identical shape, and added
+  `test/unit/ingest/test_prompts.py` — loads golden bar-fact values AND subjects, allowlists
+  only `{HelixPay, HelixPay SEA, HelixPay Brasil}`, and word-boundary-scans every
+  `prompts/*.md`. De-leak only affects FUTURE extractions; the existing `helixpay_full` DB /
+  `.replay-cache` were recorded under the leaked prompt, so a paid re-record is needed to
+  learn the true uncoached recall.
+
+### SP_024 / SP_025: drop-taxonomy gate + coercion recovery
+
+- **Status**: Complete — **deployed to production** at the SP_024–028 merge gate
+- **Tier**: Standard (SP_024) / Foundational (SP_025)
+- **Date**: 2026-06-11
+- **Summary**: SP_024 — drop-taxonomy gate making extraction loss auditable. SP_025 —
+  coercion recovery with a CRITICAL entity-collapse guard (recovers coercible items without
+  silently merging distinct entities; additive nullable `links.raw_verb`, out of the natural
+  key). Both Complete and plan-blind reviewed. The earlier deploy hold (concurrent-agent path
+  collision + CLAUDE.md size limit) was lifted at the merge gate; the SP_025 schema is
+  additive/nullable/out-of-key (safe on live `helixpay_full`) and the entity-collapse guard is
+  bidirectionally test-pinned.
+
+### SP_022 / SP_023: MCP retrieval + graph/temporal tools
+
+- **Status**: Complete
+- **Tier**: Foundational
+- **Date**: 2026-06-11
+- **Summary**: 12 MCP tools = 4 frozen `QueryEngine` + 8 optional on `ExposureEngine` /
+  `HelixQueryEngine`, discovered by `_retrieval` `getattr` (additive, pure-read). SP_022 —
+  `search` / `fetch` / `get_sources` / `list_entities` (provenance by chunk id, document-date
+  `source_as_of`). SP_023 — `get_timeline` / `get_relationships` / `list_metrics` /
+  `get_claims_by_predicate` (+`MetricVocab`; canonicalize-match in the db layer; `get_links`
+  incoming via `to_entity_id`; `get_timeline` reuses `subject_id` with claim-period
+  `source_as_of`).
+
+### SP_021: structured image/chart extraction — graded by source
+
+- **Status**: Complete
+- **Tier**: Standard
+- **Date**: 2026-06-11
+- **Summary**: Image vision pass (`helixpay/ingest/loaders/image.py`) transcribes each chart series and its
+  per-period values (actual vs plan); `extract_claims.md` maps a region series → one
+  `revenue` claim per region/period (regions stay distinct, never collapsed onto HelixPay).
+  An image-sourced golden fact is FOUND only if the satisfying claim carries the image
+  `source_uri` — proving the image was extracted. `HelixPay SEA` is minted at ingest. The $0
+  replay cache predates this prompt, so only a paid single-image re-extraction validates the
+  image facts. `test/golden/facts.yaml` is the master oracle; smoke/sample subsets are
+  generated, never hand-edited.
+
+### SP_019 / SP_020: extraction attribution + mint-time entity resolution
+
+- **Status**: Complete
+- **Tier**: Standard
+- **Date**: 2026-06-10 (SP_019) / 2026-06-11 (SP_020)
+- **Summary**: SP_019 — `ingest/repair.py` re-attributes known company metrics to the seeded
+  company before resolution (milestone predicates excluded, regional metrics left distinct);
+  re-record raised golden recall 4/11 → 7/11 (64%). SP_020 — fixed the two-subject-type
+  duplicate at MINT time (`resolve_mention` snaps an open-class mention to an existing
+  same-name row when one side is the catch-all `other`), removing SP_010's per-account Açaí
+  hardcode so the link resolves at ingest for every account with no seed.
 
 ### SP_018: RDD/SRP refactor — separate domain logic from I/O
 

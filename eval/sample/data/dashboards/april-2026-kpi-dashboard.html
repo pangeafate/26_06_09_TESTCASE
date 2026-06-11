@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HelixPay April 2026 KPI Dashboard — Internal</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f1419; color: #e7eaee; margin: 0; padding: 32px; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { color: #8b95a3; font-size: 12px; margin-bottom: 24px; }
+  .banner { background: #3a2a18; border: 1px solid #6a4a22; color: #f0c984; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card { background: #1a1f2a; border: 1px solid #232a36; border-radius: 6px; padding: 16px; }
+  .card .label { color: #8b95a3; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 28px; font-weight: 600; margin-top: 6px; }
+  .card .delta { font-size: 12px; margin-top: 4px; }
+  .delta.up { color: #56d364; }
+  .delta.down { color: #f08c8c; }
+  .delta.flat { color: #8b95a3; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #232a36; }
+  th { color: #8b95a3; font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  .section { background: #1a1f2a; border: 1px solid #232a36; border-radius: 6px; padding: 20px; margin-bottom: 16px; }
+  .section h2 { font-size: 15px; font-weight: 500; margin: 0 0 12px 0; }
+  .stamp { color: #8b95a3; font-size: 10px; margin-top: 24px; }
+  .red { color: #f08c8c; }
+  .amber { color: #f0c984; }
+  .green { color: #56d364; }
+</style>
+</head>
+<body>
+  <h1>HelixPay — KPI Dashboard</h1>
+  <div class="subtitle">Internal · As of 2026-04-21 · Q1 closed, Q2 in flight · Owner: FP&amp;A (Aisha Mahmud)</div>
+
+  <div class="banner">Q1 closed under plan. Q2 pacing 26% behind. See Weekly Business Review for context.</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Q1 2026 Revenue (SGD)</div>
+      <div class="value">14.2M</div>
+      <div class="delta down">−11% vs plan · +5% YoY</div>
+    </div>
+    <div class="card">
+      <div class="label">Net New Merchants Q1</div>
+      <div class="value">412</div>
+      <div class="delta up">108% of plan</div>
+    </div>
+    <div class="card">
+      <div class="label">Total Paid Merchants</div>
+      <div class="value">3,424</div>
+      <div class="delta up">+14% vs Q4</div>
+    </div>
+    <div class="card">
+      <div class="label">Aggregate NPS</div>
+      <div class="value">47</div>
+      <div class="delta up">+1 vs Q4</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">EBITDA Q1 (SGD)</div>
+      <div class="value">−2.1M</div>
+      <div class="delta up">vs −3.4M Q1 25</div>
+    </div>
+    <div class="card">
+      <div class="label">Monthly Burn (SGD)</div>
+      <div class="value">1.8M</div>
+      <div class="delta flat">flat QoQ</div>
+    </div>
+    <div class="card">
+      <div class="label">Runway</div>
+      <div class="value">18 mo</div>
+      <div class="delta flat">at current burn</div>
+    </div>
+    <div class="card">
+      <div class="label">April MTD Revenue</div>
+      <div class="value">4.1M</div>
+      <div class="delta down">behind pace</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Revenue by region — Q1 2026</h2>
+    <table>
+      <tr><th>Region</th><th>Q1 Actual</th><th>Q1 Plan</th><th>Δ vs Plan</th></tr>
+      <tr><td>SEA (SGD)</td><td>9.4M</td><td>10.0M</td><td class="amber">−6%</td></tr>
+      <tr><td>Brasil (SGD equiv)</td><td>4.8M</td><td>6.0M</td><td class="red">−20%</td></tr>
+      <tr><td>Brasil (BRL)</td><td>R$22.0M</td><td>R$28.0M</td><td class="red">−21%</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>NPS by segment — Q1 2026</h2>
+    <table>
+      <tr><th>Segment</th><th>NPS</th><th>n</th><th>vs Q4</th></tr>
+      <tr><td>SEA enterprise</td><td class="green">62</td><td>47</td><td class="up">+9</td></tr>
+      <tr><td>SEA SMB</td><td>41</td><td>312</td><td class="flat">+2</td></tr>
+      <tr><td>Brasil enterprise</td><td>53</td><td>19</td><td class="amber">−3</td></tr>
+      <tr><td>Brasil SMB</td><td class="red">31</td><td>408</td><td class="red">−8</td></tr>
+      <tr><td><strong>Aggregate</strong></td><td><strong>47</strong></td><td>786</td><td>+1</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Q1 churn</h2>
+    <table>
+      <tr><th>Account</th><th>Segment</th><th>Reason</th><th>ARR (SGD)</th></tr>
+      <tr><td>Lazada SG midmarket</td><td>SEA enterprise</td><td>pricing</td><td>180K</td></tr>
+      <tr><td>Cosmos Hotels</td><td>SEA enterprise</td><td>competitor (multi-property)</td><td>120K</td></tr>
+      <tr><td>Banco Verde</td><td>SEA enterprise</td><td>vendor consolidation</td><td>40K</td></tr>
+      <tr><td colspan="3"><strong>Total Q1 ARR churn</strong></td><td><strong>340K</strong></td></tr>
+    </table>
+  </div>
+
+  <div class="stamp">helixpay-bi · Looker dashboard 27 · exported as static HTML 2026-04-21 09:14 SGT</div>
+</body>
+</html>
