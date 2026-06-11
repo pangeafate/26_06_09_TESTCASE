@@ -324,15 +324,16 @@ class PostgresRepository:
     def add_link(self, link: Link) -> None:
         with self.conn.cursor() as cur:
             cur.execute(
-                # document_id is appended to the INSERT but stays out of the natural key
-                # (the ON CONFLICT target is byte-identical to links_natural_key), so
-                # re-ingesting the same edge dedupes and keeps the first document_id.
+                # document_id and raw_verb (SP_025) are appended to the INSERT but stay out of
+                # the natural key (the ON CONFLICT target is byte-identical to
+                # links_natural_key), so re-ingesting the same edge dedupes and keeps the first
+                # document_id / verb.
                 """
-                INSERT INTO links (from_entity_id, to_entity_id, link_type, as_of, valid_to, confidence, source_chunk_id, document_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                INSERT INTO links (from_entity_id, to_entity_id, link_type, as_of, valid_to, confidence, source_chunk_id, document_id, raw_verb)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (from_entity_id, to_entity_id, link_type, COALESCE(as_of, '0001-01-01')) DO NOTHING
                 """,
-                (link.from_entity_id, link.to_entity_id, link.link_type, link.as_of, link.valid_to, link.confidence, link.source_chunk_id, link.document_id),
+                (link.from_entity_id, link.to_entity_id, link.link_type, link.as_of, link.valid_to, link.confidence, link.source_chunk_id, link.document_id, link.raw_verb),
             )
             self.conn.commit()
 
@@ -361,6 +362,38 @@ class PostgresRepository:
                 (c.subject_entity_id, c.predicate, a, b, c.kind, c.note, la, lb),
             )
             self.conn.commit()
+
+    def clear_contradictions(self) -> int:
+        """Delete every contradiction row; return the count removed. Not on the Protocol —
+        maintenance use for a full recompute after a comparator change, since ``detect`` is
+        additive and never retracts a pair that no longer holds (SP_026)."""
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM contradictions")
+            n = cur.rowcount
+            self.conn.commit()
+        return n
+
+    def distinct_claim_groups(self) -> list[tuple[int, str]]:
+        """Every live ``(subject_entity_id, predicate)`` group carrying a non-superseded,
+        subject-bearing claim — the recompute domain for ``contradict.detect``. Not on the
+        Protocol (SP_026 recompute tooling)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT subject_entity_id, predicate FROM claims "
+                "WHERE superseded_by IS NULL AND subject_entity_id IS NOT NULL "
+                "ORDER BY subject_entity_id, predicate"
+            )
+            return [(r["subject_entity_id"], r["predicate"]) for r in cur.fetchall()]
+
+    def distinct_link_groups(self) -> list[tuple[int, str]]:
+        """Every ``(from_entity_id, link_type)`` group — the recompute domain for
+        ``contradict.detect_link_conflicts``. Not on the Protocol (SP_026 recompute tooling)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT from_entity_id, link_type FROM links "
+                "ORDER BY from_entity_id, link_type"
+            )
+            return [(r["from_entity_id"], r["link_type"]) for r in cur.fetchall()]
 
     def upsert_metric(self, canonical_key: str, display_name: str, aliases: list[str]) -> None:
         """Seed/refresh one metric_vocab row (gate-only; not on the Protocol)."""

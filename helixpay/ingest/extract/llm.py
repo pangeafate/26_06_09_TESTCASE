@@ -34,7 +34,11 @@ log = logging.getLogger("helixpay.ingest.extract.llm")
 
 T = TypeVar("T", bound=BaseModel)
 
-_MAX_TOKENS = 8192  # SP_014: raised from 4096 to reduce truncation on dense chunks
+_MAX_TOKENS = 16384  # SP_014: 4096→8192; SP_026: 8192→16384 — the sales-pipeline dashboard
+# emits one claim per deal attribute (~12 deals × 5–6 attrs ≈ 65 claims), whose JSON
+# overran 8192 → stop_reason=max_tokens → undecodable → the whole extraction was dropped
+# (0 claims). claude-sonnet-4-6 supports far larger output; we only pay for tokens actually
+# generated, so the higher ceiling costs nothing on the common (small) chunk.
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 

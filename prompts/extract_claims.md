@@ -136,6 +136,28 @@ When the span is a transcribed chart/graph (a `source_type: image` caption that 
 
 (Describe the shape only — the numbers come from the transcribed caption, not from here.)
 
+## Sales pipeline / CRM deal snapshots
+
+A sales-pipeline or CRM dashboard lists **open deals/opportunities** with their **current
+recorded state** as of the snapshot. That recorded state **is an asserted fact** about the
+deal — **not** hypothetical — even though the deal's outcome is still in the future. Do not
+skip a pipeline table as "speculative": extract one claim per deal attribute the row gives.
+
+- `subject` = the **account / opportunity** as named ("Northwind Logistics", "Açaí Express
+  SP"); `subject_type` = `customer`.
+- `predicate` = the attribute, canonical and period-stripped: `pipeline_stage`,
+  `deal_amount`, `deal_owner`, `expected_close_date`, `deal_health`.
+- `object_value` = the cell value exactly as written ("Negotiation", "620K", "2026-05-12",
+  "on track").
+- `as_of` = the dashboard's snapshot/export date. **This is the one case where the export
+  date IS the as_of** — it dates the deal's *recorded state*, not a metric's reporting period
+  (contrast the KPI-card rule above). Use the "as of <date>" header.
+- `hypothetical` = `false` for a recorded deal attribute. Only an explicitly **weighted /
+  forecast aggregate** ("total weighted pipeline 18.5M", "coverage 2.6×") is forward-looking
+  → `true`.
+
+  ✓ right: `{"subject": "Northwind Logistics", "subject_type": "customer", "predicate": "expected_close_date", "object_value": "2026-05-12", "as_of": "2026-04-21", "hypothetical": false}`
+
 ## Output — STRICT JSON ONLY
 
 Return a single JSON object and nothing else (a lone ```json fence is tolerated but not

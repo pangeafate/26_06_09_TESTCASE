@@ -153,3 +153,65 @@ def test_missing_value_is_not_a_conflict():
 def test_text_values_compare_casefold():
     assert values_equal("Active", "active") is True
     assert values_conflict("Active", "Churned") is True
+
+
+# --------------------------------------------------------------------------- #
+# annotation parentheticals (SP_026) — a paren group carrying a *letter*
+# ("(per app)", "(against plan of 10)", "(BRL 22M)") is disambiguating prose, not
+# part of the magnitude. It is dropped in the NUMERIC path only, so a value's
+# primary number parses and two readings that AGREE on the number but differ only
+# in their annotation stop being a false contradiction. Digit-only parens
+# (accounting negatives like "(840.00)") are deliberately NOT stripped.
+# --------------------------------------------------------------------------- #
+def test_annotation_parenthetical_dropped_in_numeric_parse():
+    assert normalize_value("9.4 (against plan of 10)")[1] == pytest.approx(9.4)
+    assert normalize_value("SGD 4.8M (BRL 22M)")[1] == pytest.approx(4_800_000.0)
+    assert normalize_value("R$ 192,660.00 (per app)")[1] == pytest.approx(192_660.0)
+
+
+def test_annotation_kept_in_canonical_text():
+    # The fix touches the numeric copy only — the canonical text still carries the
+    # annotation so a genuinely text-only value is never mangled.
+    text, num = normalize_value("9.4 (against plan of 10)")
+    assert "against plan" in text
+    assert num == pytest.approx(9.4)
+
+
+def test_same_number_different_annotation_is_not_a_conflict():
+    # gross_revenue agrees at 192,660 across two reporting channels — no value conflict.
+    assert (
+        values_conflict(
+            "R$ 192,660.00 (per app)", "R$ 192,660.00 (per bank statement)"
+        )
+        is False
+    )
+
+
+def test_different_number_same_shape_still_conflicts():
+    # net_revenue genuinely disagrees app-vs-bank → a real contradiction survives.
+    assert (
+        values_conflict(
+            "R$ 191,390.00 (per app)", "R$ 189,250.00 (per bank statement)"
+        )
+        is True
+    )
+    # per-person commit counts differ → still a conflict after the annotation strip.
+    assert values_conflict("38 (Yong Wei)", "18 (Camila Souza)") is True
+
+
+def test_planted_revenue_conflict_survives_annotation_strip():
+    # Different magnitudes must still conflict even when both carry a source annotation.
+    assert values_conflict("SGD 14.2M (dashboard)", "SGD 13.9M (board deck)") is True
+
+
+def test_accounting_negative_parens_not_treated_as_annotation():
+    # A digit-only paren is an accounting negative, never an annotation — it must NOT be
+    # stripped (which would silently parse a positive/None). It stays non-numeric here.
+    assert normalize_value("(840.00)")[1] is None
+    # Two different refund magnitudes still conflict (compared as text, parens intact).
+    assert (
+        values_conflict(
+            "R$ (840.00) (HelixPay Core cards)", "R$ (310.00) (HelixPay Tap)"
+        )
+        is True
+    )

@@ -54,6 +54,16 @@ _SCALE = {
 # A bare "r" is deliberately NOT stripped (it would mangle text values like "revenue").
 _CURRENCY = re.compile(r"\br\$|\b(?:sgd|usd|brl|eur|myr|gbp|jpy)\b|[$€£¥₹]", re.IGNORECASE)
 
+# Annotation parenthetical: a "(...)" group that carries at least one LETTER — a
+# disambiguating qualifier such as "(per app)", "(HelixPay Core cards)",
+# "(against plan of 10)", or "(BRL 22M)" — not part of the magnitude. Stripped from the
+# numeric copy ONLY so the primary number parses and two readings that agree on the
+# number but differ only in annotation stop being a false value-conflict. A digit-only
+# paren (an accounting negative like "(840.00)") has NO letter, so it is left intact and
+# is never silently re-read as a positive/None. `[^\W\d_]` is "a word char that is
+# neither digit nor underscore" — i.e. any (incl. accented) letter.
+_ANNOTATION_PAREN = re.compile(r"\([^)]*[^\W\d_][^)]*\)")
+
 # Approx markers: the ~/≈ symbols and a small set of hedge words. Note: the bare
 # abbreviation "est" is deliberately NOT here — it would strip the Latin "est." from a
 # founding-year value ("est. 2015" → ". 2015"); "estimated" already covers the intent.
@@ -140,9 +150,13 @@ def normalize_value(value: Optional[str]) -> tuple[str, Optional[float]]:
     # 5. collapse whitespace, expand cardinals, collapse again.
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"\s+", " ", _expand_cardinals(text)).strip()
-    # 6. numeric parse on a currency-stripped copy (text itself keeps currency so a
-    #    text-only value is never mangled).
-    cleaned = re.sub(r"\s+", " ", _CURRENCY.sub(" ", text)).strip()
+    # 6. numeric parse on a currency-stripped copy with annotation parentheticals
+    #    removed (text itself keeps both so a text-only value is never mangled): a value
+    #    that agrees on the magnitude but carries a differing source/qualifier annotation
+    #    must not read as a contradiction. Digit-only parens (accounting negatives) are
+    #    preserved by _ANNOTATION_PAREN's letter requirement.
+    cleaned = _ANNOTATION_PAREN.sub(" ", _CURRENCY.sub(" ", text))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return text, _parse_number(cleaned)
 
 
