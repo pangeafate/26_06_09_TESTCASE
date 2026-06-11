@@ -256,7 +256,7 @@ Foundational ⇒ ≥2 independent iterations; plan-blind (Rule 5 — reviewer se
 - **Iteration 1** — code-reviewer, plan-blind over the diff; 0 CRITICAL, 2 HIGH + 1 MEDIUM + 4 LOW, APPROVE-WITH-NITS — folded (HIGH-1 `search` emitted `"id":"None"` for an `id=None` chunk [production-unreachable, `FakeRepository` gap] → skip `id is None` + regression test; HIGH-2 `fetch` dict-vs-list `results` asymmetry documented in `_retrieval`; LOWs: k-truncation test, mock `document_id` explicit, stale module docstring). Files reviewed: contracts/repository.py, db/repository.py, query/engine.py, api/engine.py, mcp/server.py, test/unit/query/test_engine.py, test/unit/query/fakes.py, test/unit/api/test_mcp.py, test/integration/db/test_repository_reads.py.
 - **Iteration 2** — architect-reviewer, plan-blind, confirmation perspective; 0 CRITICAL / 0 HIGH, APPROVE-WITH-NITS — frozen `QueryEngine` confirmed unchanged, `ExposureEngine`+getattr seam sound, no SQL leak (query→db), low blast radius. MEDIUM-2 (`fetch` miss-metadata key asymmetry → `KeyError` risk) **fixed**: miss payload now carries the stable `_MISS_META` key set (None-valued). MEDIUM-1 (`get_sources` cross-layer homonym) accepted eyes-open (comment + tests); LOW (`_SNIPPET_MAX` duplicated across layers) noted, deliberate. Files reviewed: contracts/query.py, contracts/repository.py, db/repository.py, query/engine.py, api/engine.py, mcp/server.py.
 
-**Verification after folds:** 622 unit passed / 1 db-skipped, **4/4 DB integration passed against
+**Verification after folds:** 621 unit passed / 1 db-skipped, **4/4 DB integration passed against
 pgvector pg16** (real SQL: `get_chunk` full-text + miss, `list_documents` ordering + `raw_text`,
 `list_entities` filter), mypy clean (71 files), 11/11 validators PASS.
 
