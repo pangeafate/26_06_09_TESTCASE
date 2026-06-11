@@ -6,7 +6,7 @@ user_stories:
   - "As an agent (ChatGPT/Claude) connected to the live MCP, I can `search` the corpus, `fetch` a hit's full text, list the source `get_sources` inventory, and enumerate entities by type — so corpus-scoped and entity-scoped questions ('what discussions did Wei Chen have recently', 'what countries are covered') are answerable without `ask` synthesis."
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_022-mcp-retrieval-tools
 worktree: ""
@@ -267,3 +267,10 @@ pgvector pg16** (real SQL: `get_chunk` full-text + miss, `list_documents` orderi
   SOLUTION/README if it enumerates tools.
 - Deploy: push → CI `Deploy to Production`; `scripts/verify_mcp.py` must list the eight
   tools live; spot-call `list_entities("other")` and `search` against the live `/mcp`.
+
+**Deployed + verified 2026-06-11.** Canonical push→CI: `Deploy to Production` green (gateway
++ rsync + `deploy.sh` + `/health` 200, 52s). Live probe of `https://helixpay.serverado.app/mcp`:
+all **8 tools** listed; `search` / `get_sources` / `list_entities` now return
+`available:true` (were `available:false` pre-sprint); `list_entities('other')` enumerates the
+region/org-unit roster (HelixPay Brasil, …). Results are over the **seeded backbone** — the
+full-corpus extraction is the separately-gated paid step, unchanged by this sprint.
