@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-09
+last-reconciled: 2026-06-11
 authoritative-for: [user-stories, acceptance-criteria]
 ---
 
@@ -50,3 +50,16 @@ grader. Each story notes the gate's contribution and the owning agent for the re
 
 - Acceptance: idempotent ingestion; MCP over streamable-HTTP at the domain.
 - Gate: idempotent schema + seed; config from env. Full: Agents 4/5.
+
+## US-7 — Retrieval primitives for connected agents (SP_022)
+> As an agent (ChatGPT/Claude) connected to the live MCP, I can `search` the corpus,
+> `fetch` a hit's full text, list the `get_sources` document inventory, and enumerate
+> entities by type — so corpus-scoped and entity-scoped questions ("what discussions did
+> Wei Chen have recently", "what countries are covered") are answerable directly, not only
+> through `ask` synthesis.
+
+- Acceptance: all four retrieval tools return `available:true` against the real engine;
+  `search` is RRF-ranked with `source_as_of` + provenance; `fetch` returns full text and
+  never raises on a bad id; `list_entities('other')` enumerates regions/org-units.
+- Gate: `ExposureEngine` optional surfaces over `HelixQueryEngine` + additive `Repository`
+  reads (`get_chunk`/`list_documents`/`list_entities`). Full: SP_022.

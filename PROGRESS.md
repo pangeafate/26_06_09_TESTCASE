@@ -53,27 +53,6 @@ operator-gated (see `workspace/acceptance/SP016_live_verification.md`).
 
 ## Sprint History
 
-### SP_022: MCP retrieval tools — search / fetch / get_sources / list_entities
-
-- **Status**: Code complete; deploy/live-verify pending
-- **Date**: 2026-06-11
-- **Summary**: Made the live MCP serve retrieval primitives, not just `ask` synthesis. The
-  real `HelixQueryEngine` previously implemented only the 4 frozen `QueryEngine` methods, so
-  `search`/`get_sources` returned `available:false` in production. Added four optional
-  `ExposureEngine` surfaces on the real engine — `search` (hybrid retrieval, RRF-ranked,
-  provenance re-aligned by chunk id, `source_as_of` = the document date), `fetch` (full
-  untruncated chunk text by id, bad/absent id → `found:false`, never raises), `get_sources`
-  (document inventory), `list_entities` (enumerate by type — answers corpus-wide "what
-  countries/teams/customers are covered"). Extended the `Repository` contract additively with
-  three pure reads (`get_chunk`, `list_documents`, `list_entities`) + their PostgresRepository
-  SQL; registered `fetch` + `list_entities` as MCP tools (now eight). The frozen `QueryEngine`
-  Protocol is untouched; no schema change; `fetch`/`get_sources`/`list_entities` are $0 reads.
-  Stage-3 review: 3 iterations (architect + 2× code), all CRITICAL/HIGH folded. Stage-5
-  plan-blind: APPROVE-WITH-NITS, folded.
-- **Tests added**: +12 unit (engine search/fetch/get_sources/list_entities + rank-order +
-  degradation + Protocol conformance) + 4 db-integration (verified against pgvector pg16);
-  621 unit passing, mypy clean, 11/11 validators PASS.
-
 ### SP_018: RDD/SRP refactor — separate domain logic from I/O
 
 - **Status**: Complete
