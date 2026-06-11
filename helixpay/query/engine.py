@@ -335,6 +335,10 @@ class HelixQueryEngine:
                 {
                     "link_id": lid,
                     "link_type": ln.link_type,
+                    # SP_025: when link_type is the catch-all `mentions` because the original verb
+                    # was out-of-vocab, raw_verb carries that verb (e.g. "contributor") — surface
+                    # it so an agent can read the real relationship semantics. None for canonical.
+                    "raw_verb": ln.raw_verb,
                     "direction": direction,
                     "from_entity_id": ln.from_entity_id,
                     "from_name": names.get(ln.from_entity_id),

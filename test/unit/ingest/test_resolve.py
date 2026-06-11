@@ -274,3 +274,66 @@ def test_seeded_account_wins_even_if_a_minted_other_row_coexists():
     # the grader and the link endpoint resolve the bare name TYPE-AGNOSTICALLY; even with the
     # duplicate present, seeded-first disambiguation returns the seeded row — never None.
     assert resolve_mention(repo, "Açaí Express SP") == acai
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SP_025 review — entity-collapse guard for FALLBACK `other` (allow_snap)
+#
+# The coercion-recovery fallback maps an out-of-vocab subject_type (file/repository/ticket)
+# to the `other` catch-all so the claim's value survives. But `other` is exactly the type the
+# SP_020 snap treats as "compatible with anything" — so without a guard a file named "Orbit"
+# would COLLAPSE onto a distinct same-name `product`/`customer`/seeded row. A fallback subject
+# must mint/​dedup as its own `other` entity and NEVER bridge onto a distinct entity. The
+# pipeline signals a fallback by passing `allow_snap=False`.
+# ─────────────────────────────────────────────────────────────────────────────
+def test_fallback_other_does_not_snap_onto_a_distinct_unseeded_entity():
+    repo = FakeRepo()
+    prod = resolve_mention(repo, "Orbit", entity_type="product")  # an unseeded product|Orbit
+    before = len(repo.entities)
+    # a file/ticket named "Orbit" comes through as a FALLBACK other → must NOT become the product
+    fid = resolve_mention(repo, "Orbit", entity_type="other", allow_snap=False)
+    assert fid is not None and fid != prod
+    assert len(repo.entities) == before + 1  # minted its own `other` row, did not collapse
+
+
+def test_fallback_other_does_not_snap_onto_a_seeded_distinct_type():
+    repo = FakeRepo()
+    repo.seed("Confluence", "product")  # the seeded product
+    before = len(repo.entities)
+    # a file named "Confluence" (fallback other) must not attach its hot-file fact to the product
+    fid = resolve_mention(repo, "Confluence", entity_type="other", allow_snap=False)
+    assert fid is not None
+    assert repo.entities[-1].entity_type == "other" and len(repo.entities) == before + 1
+
+
+def test_fallback_other_still_dedups_with_a_same_named_other():
+    # the guard only blocks the cross-type bridge; two fallback `other` rows of the SAME name
+    # still dedup via the typed resolve (no duplicate `other|config.py`).
+    repo = FakeRepo()
+    first = resolve_mention(repo, "config.py", entity_type="other", allow_snap=False)
+    before = len(repo.entities)
+    second = resolve_mention(repo, "config.py", entity_type="other", allow_snap=False)
+    assert second == first and len(repo.entities) == before
+
+
+def test_fallback_other_still_attaches_to_a_same_named_seeded_other():
+    # Accepted residual (Stage-5): the exact typed resolve runs BEFORE the allow_snap guard, so a
+    # fallback subject named exactly like a SEEDED `other` (the company / a region) attaches to
+    # that seeded row. This is the SP_019 seeded-snap intent (a same-named mention belongs to the
+    # seeded entity) and is a net gain over the pre-SP_025 drop. The guard only blocks bridging
+    # onto DISTINCT-typed (product/customer/…) or unseeded rows — pinned here so it can't regress.
+    repo = FakeRepo()
+    hp = repo.seed("HelixPay", "other")
+    before = len(repo.entities)
+    fid = resolve_mention(repo, "HelixPay", entity_type="other", allow_snap=False)
+    assert fid == hp and len(repo.entities) == before  # attaches to seeded, mints nothing
+
+
+def test_genuine_other_snap_is_unchanged_when_allow_snap_default():
+    # regression guard: the SP_020 genuine-`other` snap (default allow_snap=True) is untouched —
+    # an account mentioned as both `customer` and `other` still collapses to one row.
+    repo = FakeRepo()
+    cust = resolve_mention(repo, "Açaí Express SP", entity_type="customer")
+    before = len(repo.entities)
+    snapped = resolve_mention(repo, "Açaí Express SP", entity_type="other")  # default snap on
+    assert snapped == cust and len(repo.entities) == before

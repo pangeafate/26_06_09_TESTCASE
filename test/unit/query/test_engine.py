@@ -515,6 +515,20 @@ def test_get_relationships_filters_by_link_type_and_self_loop_is_outgoing(repo):
     assert rels["relationships"][0]["direction"] == "outgoing"  # self-loop emitted once
 
 
+def test_get_relationships_surfaces_raw_verb_for_mentions_fallback(repo):
+    # SP_025: an out-of-vocab verb lands as a `mentions` edge with the original verb in
+    # raw_verb. get_relationships must surface raw_verb so an agent can read the real
+    # relationship semantics — otherwise preserving it on write is pointless.
+    lucas = repo.add_entity(Entity(canonical_name="Lucas", entity_type="person"))
+    acme = repo.add_entity(Entity(canonical_name="Acme", entity_type="customer"))
+    repo.add_link_row(Link(id=1, from_entity_id=lucas, to_entity_id=acme,
+                           link_type="mentions", raw_verb="employed_by"))
+    repo.add_link_row(Link(id=2, from_entity_id=lucas, to_entity_id=acme, link_type="owns"))
+    by_id = {r["link_id"]: r for r in _engine(repo).get_relationships("Lucas")["relationships"]}
+    assert by_id[1]["link_type"] == "mentions" and by_id[1]["raw_verb"] == "employed_by"
+    assert by_id[2]["raw_verb"] is None  # canonical link → no raw_verb
+
+
 def test_get_relationships_unresolved_entity_degrades(repo):
     out = _engine(repo).get_relationships("Ghost")
     assert out["resolved"] is False and out["relationships"] == []

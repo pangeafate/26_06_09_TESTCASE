@@ -52,9 +52,37 @@ def test_truncated_call_fails() -> None:
 
 
 def test_drops_need_human_review_incomplete() -> None:
+    # back-compat: a pre-SP_024 ledger lacks lossy_drops → the total is treated as lossy
+    # (conservative — an un-split ledger cannot prove its drops were benign).
     led = {"empty_extractions": 0, "truncated_calls": 0, "items_dropped": 3}
     v = cs.doc_verdict("x", 1, 1, 1.0, led, True)
     assert v["verdict"] == "INCOMPLETE"
+
+
+def test_lossy_drops_are_incomplete() -> None:
+    # SP_024: a genuine schema/grounding loss still needs human explanation.
+    led = {"empty_extractions": 0, "truncated_calls": 0, "items_dropped": 3, "lossy_drops": 2}
+    v = cs.doc_verdict("x", 1, 1, 1.0, led, True)
+    assert v["verdict"] == "INCOMPLETE"
+
+
+def test_lossy_exceeding_total_still_gates_and_never_negative() -> None:
+    # defensive: a corrupt/hand-crafted entry where lossy > items_dropped must still gate to
+    # INCOMPLETE (lossy drives the branch) and never emit a negative "benign" count.
+    led = {"empty_extractions": 0, "truncated_calls": 0, "items_dropped": 2, "lossy_drops": 5}
+    v = cs.doc_verdict("x", 1, 1, 1.0, led, True)
+    assert v["verdict"] == "INCOMPLETE"
+    assert not any("intentional drop" in r for r in v["reasons"])
+
+
+def test_benign_drops_alone_do_not_block_pass() -> None:
+    # SP_024 core fix: hypothetical/ungrounded drops are CORRECT non-assertion. A doc that
+    # extracted cleanly and only declined to assert benign items must be able to PASS — the
+    # extractor always drops some hypotheticals on real docs, so items_dropped==0 is
+    # structurally unreachable and was wrongly forcing every doc to INCOMPLETE.
+    led = {"empty_extractions": 0, "truncated_calls": 0, "items_dropped": 3, "lossy_drops": 0}
+    v = cs.doc_verdict("x", 1, 1, 1.0, led, True)
+    assert v["verdict"] == "PASS"
 
 
 def test_zero_norm_embedding_fails() -> None:

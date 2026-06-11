@@ -134,6 +134,10 @@ class Link(BaseModel):
     from_entity_id: int
     to_entity_id: int
     link_type: str  # one of LinkType
+    # SP_025: the original out-of-vocab verb when link_type was coerced to the generic
+    # `mentions` fallback (e.g. "contributor", "employed_by"). None for canonical links.
+    # Additive + nullable; rides outside the natural key (mirrors document_id below).
+    raw_verb: Optional[str] = None
     as_of: Optional[date] = None
     valid_to: Optional[date] = None
     confidence: Optional[float] = None

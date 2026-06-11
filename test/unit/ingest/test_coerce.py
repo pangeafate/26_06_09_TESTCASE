@@ -125,18 +125,28 @@ def test_subject_type_absent_stays_absent():
     assert result.item.get("subject_type") is None
 
 
-def test_unmappable_subject_type_drops():
-    raw = {"subject": "HelixPay", "predicate": "ARR", "object_value": "1M", "subject_type": "wizard"}
+def test_unmappable_subject_type_falls_back_to_other():
+    # SP_025: an unknown subject_type (file/repository/ticket/project/…) is no longer dropped —
+    # it coerces to the existing `other` catch-all so the claim's value survives.
+    raw = {"subject": "schema_v3.py", "predicate": "hot_file_rank", "object_value": "1", "subject_type": "file"}
     result = coerce_item(raw, kind="claim")
-    assert result.item is None
-    assert result.drop_reason == "unmappable_enum"
+    assert result.item is not None
+    assert result.drop_reason is None
+    assert result.item["subject_type"] == "other"
+    assert "subject_type_fallback" in result.coercions
+    # SP_025 review fix: the original out-of-vocab type is preserved so the pipeline can tell a
+    # FALLBACK `other` (a file/repo/ticket) from a genuine `other` (a type-unknown account) and
+    # refuse to snap the former onto a same-name distinct entity (entity-collapse guard).
+    assert result.item["raw_subject_type"] == "file"
 
 
-def test_unmappable_subject_type_role_drops():
+def test_unmappable_subject_type_role_falls_back_to_other():
     raw = {"subject": "CEO", "predicate": "title", "object_value": "CEO", "subject_type": "role"}
     result = coerce_item(raw, kind="claim")
-    assert result.item is None
-    assert result.drop_reason == "unmappable_enum"
+    assert result.item is not None
+    assert result.item["subject_type"] == "other"
+    assert "subject_type_fallback" in result.coercions
+    assert result.item["raw_subject_type"] == "role"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,15 +287,40 @@ def test_already_canonical_link_type_no_coercion():
     assert "link_verb" not in result.coercions
 
 
-def test_unmappable_link_verb_drops():
+def test_unmappable_link_verb_falls_back_to_mentions_with_raw_verb():
+    # SP_025: an out-of-vocab verb (advises/contributor/employed_by/…) is no longer dropped —
+    # it coerces to the generic `mentions` edge with the original verb preserved as raw_verb.
     raw = {"from_entity": "Alice", "to_entity": "Bob", "link_type": "advises"}
+    result = coerce_item(raw, kind="relation")
+    assert result.item is not None
+    assert result.drop_reason is None
+    assert result.item["link_type"] == "mentions"
+    assert result.item["raw_verb"] == "advises"
+    assert "link_fallback" in result.coercions
+
+
+def test_known_link_verb_has_no_raw_verb():
+    # a known verb canonicalizes as before and carries no raw_verb label.
+    raw = {"from_entity": "Alice", "to_entity": "Bob", "link_type": "owns"}
+    result = coerce_item(raw, kind="relation")
+    assert result.item is not None
+    assert result.item["link_type"] == "owns"
+    assert result.item.get("raw_verb") is None
+
+
+def test_none_link_type_drops():
+    # no verb at all → nothing to preserve → still a genuine drop.
+    raw = {"from_entity": "Alice", "to_entity": "Bob"}
     result = coerce_item(raw, kind="relation")
     assert result.item is None
     assert result.drop_reason == "unmappable_enum"
 
 
-def test_none_link_type_drops():
-    raw = {"from_entity": "Alice", "to_entity": "Bob"}
+@pytest.mark.parametrize("verb", ["", "   ", "\t"])
+def test_empty_or_whitespace_link_type_drops_not_fallback(verb):
+    # SP_025 review: an empty/whitespace verb is malformed, not out-of-vocab — drop it rather
+    # than mint a meaningless `mentions` edge with raw_verb="".
+    raw = {"from_entity": "Alice", "to_entity": "Bob", "link_type": verb}
     result = coerce_item(raw, kind="relation")
     assert result.item is None
     assert result.drop_reason == "unmappable_enum"

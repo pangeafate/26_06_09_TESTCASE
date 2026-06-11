@@ -223,6 +223,19 @@ def test_add_link_persists_document_id(pg_repo):
     assert len(links) == 1 and links[0].document_id == doc
 
 
+def test_add_link_persists_and_reads_back_raw_verb(pg_repo):
+    # SP_025: an out-of-vocab verb lands as a `mentions` edge with the original verb preserved
+    # in raw_verb, and round-trips through get_links (which SELECT *s + maps Link.model_fields).
+    chunk_id, doc = _chunk(pg_repo, "hash-rawverb")
+    a = pg_repo.upsert_entity(Entity(canonical_name="Lucas", entity_type="person"))
+    b = pg_repo.upsert_entity(Entity(canonical_name="Acai Express", entity_type="other"))
+    pg_repo.add_link(Link(from_entity_id=a, to_entity_id=b, link_type="mentions",
+                          raw_verb="employed_by", source_chunk_id=chunk_id, document_id=doc))
+    links = pg_repo.get_links(from_entity_id=a)
+    assert len(links) == 1
+    assert links[0].link_type == "mentions" and links[0].raw_verb == "employed_by"
+
+
 def test_get_links_filters_by_from_entity_and_type(pg_repo):
     a = pg_repo.upsert_entity(Entity(canonical_name="A", entity_type="person"))
     b = pg_repo.upsert_entity(Entity(canonical_name="B", entity_type="person"))

@@ -231,7 +231,14 @@ def _ingest_document(
             # primary entity BEFORE resolution, so the value resolves as the company's metric.
             claim_out = repair_claim(claim_out)
             subject_id = resolve_mention(
-                repo, claim_out.subject, entity_type=claim_out.subject_type, context=ctx
+                repo,
+                claim_out.subject,
+                entity_type=claim_out.subject_type,
+                context=ctx,
+                # SP_025: a FALLBACK `other` (real type was out-of-vocab) must not snap onto a
+                # same-name distinct entity — withhold the bridge so it mints/​dedups as its own
+                # `other` row instead of collapsing a file/repo/ticket into a company/product.
+                allow_snap=claim_out.raw_subject_type is None,
             )
             if subject_id is None:
                 report.dropped_mentions += 1

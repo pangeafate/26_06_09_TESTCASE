@@ -22,13 +22,15 @@ def test_valid_claim_passes_through_and_counts_emitted():
     assert ledger.per_source[URI].items_emitted == 1
 
 
-def test_unmappable_subject_type_is_dropped_and_counted():
+def test_unmappable_subject_type_falls_back_to_other_and_is_counted():
+    # SP_025: an unknown subject_type coerces to 'other' (kept) and is counted as a coercion,
+    # not a drop.
     ledger = LossLedger()
     raw = [{"subject": "x", "predicate": "p", "subject_type": "wizard"}]
     out = validate_items(raw, ClaimOut, "claim", URI, ledger)
-    assert out == []
-    assert ledger.per_source[URI].items_dropped >= 1
-    assert ledger.per_source[URI].dropped_by_reason["unmappable_enum"] >= 1
+    assert len(out) == 1 and out[0].subject_type == "other"
+    assert ledger.per_source[URI].items_dropped == 0
+    assert ledger.per_source[URI].coerced_by_kind["subject_type_fallback"] >= 1
 
 
 def test_successful_as_of_coercion_is_recorded_and_item_kept():

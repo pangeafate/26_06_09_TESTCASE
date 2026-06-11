@@ -67,12 +67,25 @@ def doc_verdict(
         status = _worst(status, "INCOMPLETE")
         reasons.append("completeness unverified (no loss ledger; needs SP_014)")
     else:
+        total_dropped = ledger_entry.get("items_dropped", 0)
+        # SP_024: only LOSSY drops (schema/grounding losses) gate the proof. Intentional
+        # non-assertions (hypothetical/ungrounded) are the faithfulness contract working and
+        # must not block PASS — else items_dropped==0 is unreachable and every doc is
+        # INCOMPLETE forever. A pre-SP_024 ledger has no "lossy_drops" key → fall back to the
+        # total (conservative: an un-split ledger can't prove its drops were benign).
+        lossy = ledger_entry.get("lossy_drops")
+        if lossy is None:
+            lossy = total_dropped
+        benign = max(total_dropped - lossy, 0)
         if ledger_entry.get("empty_extractions", 0) > 0 or ledger_entry.get("truncated_calls", 0) > 0:
             status = _worst(status, "FAIL")
             reasons.append("silent loss: empty/truncated extraction")
-        elif ledger_entry.get("items_dropped", 0) > 0:
+        elif lossy > 0:
             status = _worst(status, "INCOMPLETE")
-            reasons.append(f"{ledger_entry['items_dropped']} item(s) dropped — needs human explanation")
+            reasons.append(f"{lossy} lossy item(s) dropped (schema/grounding) — needs human explanation")
+        if benign > 0:
+            # informational only — does NOT change the verdict (intentional non-assertion).
+            reasons.append(f"{benign} intentional drop(s) (hypothetical/ungrounded) — expected, not blocking")
 
     # embedding ($0)
     if embedding_ok is False:

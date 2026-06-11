@@ -87,9 +87,17 @@ def resolve_mention(
     entity_type: Optional[str] = None,
     context: Optional[dict] = None,
     allow_create_types: frozenset[str] = DEFAULT_CREATABLE_TYPES,
+    allow_snap: bool = True,
 ) -> Optional[int]:
     """Resolve a mention to an entity id (roster-first). Returns ``None`` when the mention
-    is ambiguous-without-context or unresolved-and-not-creatable — never a silent pick."""
+    is ambiguous-without-context or unresolved-and-not-creatable — never a silent pick.
+
+    ``allow_snap`` (SP_025): when False, the type-agnostic seeded/`other` snap is withheld and
+    the mention may only resolve via an EXACT (name, entity_type) match before minting. The
+    pipeline passes False for a FALLBACK `other` subject (one whose real type was out-of-vocab,
+    e.g. a file/repo/ticket) so it can never bridge onto a distinct same-name entity — a file
+    "Orbit" must not collapse onto the `product` "Orbit". Same-name `other` rows still dedup via
+    the exact typed resolve; only the cross-type/seeded bridge is suppressed."""
     name = name.strip()
     if not name:
         return None
@@ -120,12 +128,16 @@ def resolve_mention(
         #     ``customer|Açaí`` and an ``other|Açaí`` collapse to one row, so the bare name stays
         #     unambiguous and its ``owns`` link resolves at ingest. Two *specific* distinct types
         #     are left distinct (only ``other`` is treated as compatible).
-        for variant in variants:
-            ent = repo.resolve_entity(variant, None, context)
-            if ent is None or ent.id is None:
-                continue
-            if ent.seeded or _other_compatible(entity_type, ent.entity_type):
-                return ent.id
+        # SP_025: a FALLBACK ``other`` (allow_snap=False) skips this bridge entirely — its real
+        # type was out-of-vocab, so snapping it onto a same-name seeded/specific row would
+        # collapse a file/repo/ticket into an unrelated company/product/customer.
+        if allow_snap:
+            for variant in variants:
+                ent = repo.resolve_entity(variant, None, context)
+                if ent is None or ent.id is None:
+                    continue
+                if ent.seeded or _other_compatible(entity_type, ent.entity_type):
+                    return ent.id
         new_id = repo.upsert_entity(Entity(canonical_name=name, entity_type=entity_type, seeded=False))
         log.info("created new entity", extra={"name": name, "entity_type": entity_type, "created": True})
         return new_id

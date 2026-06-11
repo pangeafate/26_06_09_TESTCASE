@@ -35,10 +35,10 @@ class StubLLMWithMeta:
 # _MIXED fixture:
 # - "HelixPay" ARR claim with valid subject_type "metric" → kept
 # - "Cosmos" arr hypothetical → dropped (hypothetical)
-# - "X" with subject_type "wizard" → dropped (unmappable_enum via coerce)
+# - "X" with subject_type "wizard" → coerced to "other" (SP_025 fallback) → kept
 # - Sara Wijaya → Daniel Tan reports_to → kept as-is
 # - "a" manages "b" → coerced to reports_to with INVERSION: from=b, to=a → kept
-# Net: 1 claim (ARR), 2 relations (both reports_to)
+# Net: 2 claims (ARR, p), 2 relations (both reports_to)
 _MIXED = json.dumps(
     {
         "claims": [
@@ -57,14 +57,18 @@ _CTX = ChunkContext(source_type="md", source_uri="data/x.md", as_of="2026-03-31"
 
 
 def test_extract_keeps_valid_drops_bad_and_hypothetical(caplog):
-    """SP_014: 'manages' is now COERCED to reports_to (inverted), so both relations survive."""
+    """SP_014: 'manages' is COERCED to reports_to (inverted), so both relations survive.
+    SP_025: the 'wizard' subject_type now coerces to 'other' (fallback) and is KEPT; only the
+    hypothetical is dropped."""
     llm = StubLLM([_MIXED])
     ex = ChunkExtractor(llm)
     with caplog.at_level(logging.WARNING, logger="helixpay.ingest.extract.extractor"):
         out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
 
-    # valid metric claim kept; wizard subject_type dropped; hypothetical dropped
-    assert [c.predicate for c in out.claims] == ["ARR"]
+    # valid metric claim kept; wizard subject_type → other (kept, SP_025); hypothetical dropped
+    assert [c.predicate for c in out.claims] == ["ARR", "p"]
+    wizard = next(c for c in out.claims if c.predicate == "p")
+    assert wizard.subject_type == "other"
 
     # Two relations: the original Sara→Daniel and the coerced 'manages' (now reports_to).
     # That two reports_to survive proves the extractor wires coerce in; the inversion
@@ -78,8 +82,8 @@ def test_extract_keeps_valid_drops_bad_and_hypothetical(caplog):
     assert original.to_entity == "Daniel Tan"
     assert original.link_type == "reports_to"
 
-    # Some warnings must still be emitted (for the wizard drop and hypothetical drop)
-    assert any("drop" in r.message.lower() for r in caplog.records)
+    # The hypothetical claim is the only real drop now (wizard recovered to 'other', SP_025).
+    assert ex.ledger.per_source[_CTX.source_uri].dropped_by_reason["hypothetical"] == 1
 
 
 def test_extract_renders_named_prompt_with_chunk_body():
@@ -210,12 +214,12 @@ def test_grounded_claim_confidence_unchanged():
 # SP_014 new tests: coerce, ledger, truncation
 # --------------------------------------------------------------------------- #
 
-def test_unmappable_subject_type_is_dropped_and_counted():
-    """subject_type='wizard' drops via coerce and is counted in the ledger.
+def test_unmappable_subject_type_falls_back_to_other_and_is_counted():
+    """SP_025: subject_type='wizard' coerces to 'other' (kept, not dropped) and the fallback
+    is counted as a coercion in the ledger.
 
     This is the extractor↔coerce *wiring* test: it asserts only the ledger-counting
-    that test_coerce.py does NOT cover (items_dropped / dropped_by_reason). The coerce
-    math itself (which enums/quarters map where) is owned by test_coerce.py.
+    that test_coerce.py does NOT cover. The coerce math itself is owned by test_coerce.py.
     """
     wizard = json.dumps({
         "claims": [
@@ -226,10 +230,10 @@ def test_unmappable_subject_type_is_dropped_and_counted():
     llm = StubLLM([wizard])
     ex = ChunkExtractor(llm)
     out = ex.extract(Chunk(document_id=1, ordinal=0, text="body"), _CTX)
-    assert out.claims == []
+    assert len(out.claims) == 1 and out.claims[0].subject_type == "other"
     uri = _CTX.source_uri
-    assert ex.ledger.per_source[uri].items_dropped >= 1
-    assert ex.ledger.per_source[uri].dropped_by_reason["unmappable_enum"] >= 1
+    assert ex.ledger.per_source[uri].items_dropped == 0
+    assert ex.ledger.per_source[uri].coerced_by_kind["subject_type_fallback"] >= 1
 
 
 def test_ledger_records_chunk_on_extract():
@@ -263,7 +267,7 @@ def test_ledger_records_truncated():
 
 
 def test_ledger_probe_has_frozen_shape():
-    """probe() must emit exactly the three keys per the SP_015 contract."""
+    """probe() emits the SP_015 keys plus SP_024's lossy_drops (the gating subset)."""
     llm = StubLLM(["not json", "still not json"])
     ex = ChunkExtractor(llm)
     ctx = ChunkContext(source_type="md", source_uri="data/x.md")
@@ -272,7 +276,7 @@ def test_ledger_probe_has_frozen_shape():
     probe = ex.ledger.probe()
     assert "data/x.md" in probe
     keys = set(probe["data/x.md"].keys())
-    assert keys == {"empty_extractions", "truncated_calls", "items_dropped"}
+    assert keys == {"empty_extractions", "truncated_calls", "items_dropped", "lossy_drops"}
 
 
 def test_ledger_hypothetical_drops_are_counted():

@@ -40,8 +40,31 @@ def test_real_ledger_probe_shape_matches_check_smoke_contract() -> None:
     probe = ledger_probe_from(_ledger())
     entry = probe(_CLEAN)
     assert entry is not None
-    # exactly the three keys check_smoke reads
-    assert set(entry) == {"empty_extractions", "truncated_calls", "items_dropped"}
+    # the keys check_smoke reads (SP_024 added lossy_drops alongside the original three)
+    assert set(entry) == {"empty_extractions", "truncated_calls", "items_dropped", "lossy_drops"}
+
+
+def test_benign_only_drops_pass_through_the_real_ledger() -> None:
+    # SP_024: a doc that only declined to assert hypothetical/ungrounded items extracted
+    # cleanly → PASS through the real ledger seam (lossy_drops==0 though items_dropped>0).
+    led = LossLedger()
+    benign = "data/interviews/sales/maria-silva.md"
+    led.record_chunk(benign)
+    led.record_emitted(benign, 4)
+    led.record_drop(benign, "hypothetical")
+    led.record_drop(benign, "ungrounded")
+    probe = ledger_probe_from(led)
+    entry = probe(benign)
+    assert entry["items_dropped"] == 2 and entry["lossy_drops"] == 0
+    v = doc_verdict(benign, 1, 1, 1.0, entry, embedding_ok=True)
+    assert v["verdict"] == "PASS"
+
+
+def test_lossy_drop_is_incomplete_through_the_real_ledger() -> None:
+    # the _DROP doc records an unmappable_enum (lossy) → INCOMPLETE (needs human explanation).
+    probe = ledger_probe_from(_ledger())
+    v = doc_verdict(_DROP, 1, 1, 1.0, probe(_DROP), embedding_ok=True)
+    assert v["verdict"] == "INCOMPLETE"
 
 
 def test_clean_doc_passes() -> None:

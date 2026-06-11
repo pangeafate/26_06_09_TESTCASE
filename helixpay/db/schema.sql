@@ -165,6 +165,11 @@ ALTER TABLE claims ADD COLUMN IF NOT EXISTS char_end INT;
 -- Links mirror claims so relationship provenance is a direct document join.
 ALTER TABLE links ADD COLUMN IF NOT EXISTS document_id BIGINT REFERENCES documents(id);
 
+-- SP_025: out-of-vocab relation verbs are no longer dropped — they land as generic `mentions`
+-- edges with the original verb preserved here. Non-key payload only (links_natural_key above
+-- is untouched, so distinct verbs on the same pair/as_of dedupe to one edge, first-verb-wins).
+ALTER TABLE links ADD COLUMN IF NOT EXISTS raw_verb TEXT;
+
 -- Contradictions can pair two links (graph conflicts), not just two claims.
 ALTER TABLE contradictions ADD COLUMN IF NOT EXISTS link_a_id BIGINT REFERENCES links(id);
 ALTER TABLE contradictions ADD COLUMN IF NOT EXISTS link_b_id BIGINT REFERENCES links(id);

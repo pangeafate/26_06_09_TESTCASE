@@ -17,7 +17,8 @@ as_of (both claims and relations):
 subject_type (claims only):
   - Case-insensitive.  Valid set: person | team | customer | product | metric | other.
   - company / organization / org / subsidiary / business / firm / corporation → other.
-  - Anything else → drop the claim (unmappable_enum).
+  - Anything else (file/repository/ticket/project/…) → FALL BACK to `other` (SP_025),
+    preserving the original in `raw_subject_type`; the claim's value is not dropped.
   - None / absent → leave absent (no drop).
 
 link_type (relations only):
@@ -34,7 +35,9 @@ link_type (relations only):
   - member of / member_of / part of / part_of / belongs to → member_of.
   - owns / own / owner of → owns.
   - mentions / mention / references → mentions.
-  - Anything else / None → drop (unmappable_enum).
+  - Any other NON-EMPTY verb (contributor/employed_by/…) → FALL BACK to `mentions` (SP_025),
+    preserving the original in `raw_verb`; the relation is not dropped.
+  - Empty/whitespace verb, or None → drop (unmappable_enum): nothing to preserve.
 """
 
 from __future__ import annotations
@@ -216,7 +219,16 @@ def coerce_item(raw: dict, kind: str) -> Coerced:
                 item["subject_type"] = _SUBJECT_TYPE_SYNONYMS[lower_st]
                 coercions.append("subject_type")
             else:
-                return Coerced(item=None, coercions=tuple(coercions), drop_reason="unmappable_enum")
+                # SP_025: an unknown subject_type (file/repository/ticket/project/event/…) is
+                # NOT dropped — it falls back to the existing `other` catch-all so the claim's
+                # value survives. The catch-all exists for exactly this; dropping here was
+                # discarding real signal (hot-file ranks, commit counts, ticket details, …).
+                # The ORIGINAL type is preserved in `raw_subject_type` so the pipeline can tell
+                # this FALLBACK `other` apart from a genuine type-unknown `other` and refuse to
+                # snap it onto a same-name distinct entity (entity-collapse guard, SP_025 review).
+                item["raw_subject_type"] = lower_st
+                item["subject_type"] = "other"
+                coercions.append("subject_type_fallback")
 
     elif kind == "relation":
         # link_type
@@ -224,8 +236,20 @@ def coerce_item(raw: dict, kind: str) -> Coerced:
         if raw_verb is None:
             return Coerced(item=None, coercions=tuple(coercions), drop_reason="unmappable_enum")
         lookup = raw_verb.strip().lower()
-        if lookup not in _LINK_VERB_MAP:
+        if not lookup:
+            # Empty/whitespace verb is a malformed emission, not an out-of-vocab relationship —
+            # there is nothing to preserve, so drop it rather than mint a meaningless `mentions`
+            # edge with raw_verb="" (SP_025 review).
             return Coerced(item=None, coercions=tuple(coercions), drop_reason="unmappable_enum")
+        if lookup not in _LINK_VERB_MAP:
+            # SP_025: an out-of-vocab verb (contributor/employed_by/manages_account/…) is NOT
+            # dropped — it falls back to the generic `mentions` edge with the original verb
+            # preserved as `raw_verb`, so the relation (and its semantics) survive for an agent
+            # to read, instead of silently discarding ~half the extracted relational signal.
+            item["link_type"] = "mentions"
+            item["raw_verb"] = lookup
+            coercions.append("link_fallback")
+            return Coerced(item=item, coercions=tuple(coercions))
         canonical, invert = _LINK_VERB_MAP[lookup]
         if canonical != raw_verb:
             # Record link_verb coercion when the canonical type differs from the raw verb.

@@ -99,7 +99,7 @@ def test_multiple_uris_are_independent():
 # probe() — frozen shape contract
 # --------------------------------------------------------------------------- #
 
-def test_probe_emits_exactly_three_keys_per_source():
+def test_probe_emits_exactly_four_keys_per_source():
     ledger = LossLedger()
     ledger.record_chunk("doc1.md")
     ledger.record_empty("doc1.md")
@@ -109,11 +109,43 @@ def test_probe_emits_exactly_three_keys_per_source():
     result = ledger.probe()
     assert "doc1.md" in result
     node = result["doc1.md"]
-    # Frozen contract — exactly these three keys
-    assert set(node.keys()) == {"empty_extractions", "truncated_calls", "items_dropped"}
+    # Contract (SP_024): the original three keys PLUS lossy_drops. items_dropped stays the
+    # TOTAL (all reasons); lossy_drops is the gating subset (schema/grounding losses only).
+    assert set(node.keys()) == {
+        "empty_extractions", "truncated_calls", "items_dropped", "lossy_drops"
+    }
     assert node["empty_extractions"] == 1
     assert node["truncated_calls"] == 1
     assert node["items_dropped"] == 1
+    # a "hypothetical" drop is intentional non-assertion, NOT a lossy schema failure.
+    assert node["lossy_drops"] == 0
+
+
+def test_probe_lossy_drops_counts_only_genuine_losses():
+    ledger = LossLedger()
+    # intentional drops — correct non-assertion, must NOT count as lossy
+    ledger.record_drop("d.md", "hypothetical")
+    ledger.record_drop("d.md", "ungrounded")
+    # genuine schema/representation losses — must count as lossy
+    ledger.record_drop("d.md", "validation_error")
+    ledger.record_drop("d.md", "unmappable_enum")
+    ledger.record_drop("d.md", "unparseable_as_of")
+
+    node = ledger.probe()["d.md"]
+    assert node["items_dropped"] == 5  # total, all reasons
+    assert node["lossy_drops"] == 3  # validation_error + unmappable_enum + unparseable_as_of
+
+
+def test_probe_unknown_drop_reason_counts_as_lossy_failsafe():
+    # SP_024 review: the gate is defined by EXCLUSION from INTENTIONAL_DROP_REASONS, not by
+    # membership in a lossy allow-list — so a brand-new, unclassified reason can only RAISE
+    # severity (counts as lossy → blocks PASS), never silently slip through as benign. This
+    # pins the fail-safe direction against a future maintainer flipping it to an allow-list.
+    ledger = LossLedger()
+    ledger.record_drop("d.md", "some_future_unclassified_reason")
+    node = ledger.probe()["d.md"]
+    assert node["items_dropped"] == 1
+    assert node["lossy_drops"] == 1  # unknown ⇒ lossy
 
 
 def test_probe_includes_all_recorded_sources():

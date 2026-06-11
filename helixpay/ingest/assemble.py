@@ -81,6 +81,7 @@ def build_link(
         from_entity_id=from_id,
         to_entity_id=to_id,
         link_type=rel.link_type,
+        raw_verb=rel.raw_verb,  # SP_025: preserved original verb for fallback `mentions` edges
         as_of=rel.as_of_date() or doc_as_of,
         confidence=rel.confidence,
         source_chunk_id=chunk_id,

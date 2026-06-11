@@ -43,6 +43,12 @@ class ClaimOut(BaseModel):
 
     subject: str
     subject_type: Optional[str] = None
+    # SP_025: when subject_type is out-of-vocab (file/repository/ticket/…) coerce maps
+    # subject_type → "other" and records the ORIGINAL here. This is a transient extraction-time
+    # signal (not persisted): the pipeline uses it to mark the subject a FALLBACK `other` and
+    # withhold the entity-snap, so a file named "Orbit" can't collapse onto a distinct `product`
+    # of the same name. None for an in-vocab or genuine-`other` subject.
+    raw_subject_type: Optional[str] = None
     predicate: str
     evidence: Optional[str] = None  # verbatim span grounding the claim (precedes the value)
     object_value: Optional[str] = None
@@ -88,6 +94,10 @@ class RelationOut(BaseModel):
     from_entity: str
     to_entity: str
     link_type: str
+    # SP_025: when the model's verb is out-of-vocab, coerce maps link_type → "mentions" and
+    # preserves the original verb here so the relation's semantics aren't lost. None for a
+    # canonical link_type.
+    raw_verb: Optional[str] = None
     as_of: Optional[str] = None
     confidence: float = 0.5
 
