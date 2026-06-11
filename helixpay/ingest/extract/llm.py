@@ -88,9 +88,20 @@ class LLMClient(Protocol):
 class AnthropicClient:
     """Real ``LLMClient`` over the Anthropic Messages API (lazy import)."""
 
-    def __init__(self, client: object | None = None, *, model: str = EXTRACTION_MODEL) -> None:
+    def __init__(
+        self,
+        client: object | None = None,
+        *,
+        model: str = EXTRACTION_MODEL,
+        temperature: float | None = None,
+    ) -> None:
         self._client = client
         self.model = model
+        # SP_028b: optional sampling temperature. ``None`` (default) OMITS the kwarg from the API
+        # call so every pre-SP_028b caller is byte-for-byte unchanged; the adjudication pass passes
+        # ``temperature=0`` for determinism. Rides on the instance — the LLMClient Protocol and
+        # call_structured are untouched.
+        self.temperature = temperature
 
     @property
     def client(self) -> object:
@@ -107,12 +118,15 @@ class AnthropicClient:
 
     def generate_with_meta(self, *, system: str, user: str, max_tokens: int) -> GenerationResult:
         """Extended seam that surfaces the stop_reason alongside the text."""
-        resp = self.client.messages.create(  # type: ignore[attr-defined]
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
+        kwargs: dict[str, object] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+        resp = self.client.messages.create(**kwargs)  # type: ignore[attr-defined]
         parts = [block.text for block in resp.content if getattr(block, "type", None) == "text"]
         return GenerationResult(
             text="".join(parts),

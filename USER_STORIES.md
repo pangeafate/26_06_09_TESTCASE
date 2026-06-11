@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-11
+last-reconciled: 2026-06-12
 authoritative-for: [user-stories, acceptance-criteria]
 ---
 
@@ -80,3 +80,19 @@ grader. Each story notes the gate's contribution and the owning agent for the re
 - Gate: `ExposureEngine` optional surfaces + additive `Repository` reads (`get_links`
   `to_entity_id`, `list_metrics`, `get_claims_by_predicate`) + the `MetricVocab` model; frozen
   `QueryEngine` untouched; `$0` (pure DB reads). Full: SP_023.
+
+## US-9 — Trustworthy contradictions: precision + semantic adjudication (SP_028a/SP_028b)
+> As the operator, the contradiction layer surfaces the GENUINE cross-document conflicts and
+> stops flooding spurious ones, so a human (or a connected agent reading
+> `AnswerBundle.contradictions`) can trust that a surfaced conflict is real and that both sides
+> are shown — never silently resolved to one value.
+
+- Acceptance: the SP_028a deterministic sweep collapses the format/multi-valued/breakdown spurious
+  classes at $0 (live `helixpay_full` 266 → 115) with zero real conflicts lost; the SP_028b LLM
+  pass then refines precision (drops same-fact-different-words pairs) and adds the cross-predicate /
+  solid-vs-dotted recall the same-predicate comparator can't see — both sides cited, no winner
+  field; a re-sweep of an unchanged store is $0 (content-hash cache).
+- Gate: single-writer clear-then-rewrite sweep; `predicate_cardinality` + shared `DedupWriter`
+  (SP_028a); two labeled claim/link blocks + Opus(temp-0) adjudication + content cache +
+  deterministic fallback floor (SP_028b); frozen `Contradiction`/`Repository` untouched. Full:
+  SP_028a, SP_028b.

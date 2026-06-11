@@ -18,8 +18,10 @@ dev_dependencies: []
 touches_paths:
   - prompts/adjudicate_contradictions.md
   - helixpay/ingest/adjudicate.py
+  - helixpay/ingest/dedup.py
   - helixpay/ingest/extract/llm.py
   - scripts/adjudicate_contradictions.py
+  - scripts/recompute_contradictions.py
   - test/unit/ingest/test_adjudicate.py
   - test/unit/ingest/test_llm_temperature.py
   - test/integration/db/test_adjudicate_integration.py
@@ -242,6 +244,38 @@ Foundational → ≥2 plan-review iterations (architect + code, plan-blind code 
 post-impl iterations. Reviewers named in Progress. Hard-stop at iteration five if CRITICAL/HIGH
 remain.
 
+## Technical Approach
+
+See **The pipeline** and **Contracts / boundaries** above: a single-writer clear-then-rewrite
+post-ingest sweep with an Opus (temperature 0) LLM refiner over two labeled, signature-sorted
+claim/link blocks, content-hash cached, with a deterministic value-pair-dedup'd fallback floor. No
+frozen-contract change, no new Repository method, no schema change.
+
+## Testing Strategy
+
+See **TDD plan** above. All unit + db-integration tests are $0 (an injected stub `LLMClient` +
+in-memory cache; no network/API/Voyage). The integration test is `pytest.mark.db` (auto-skips
+without `DATABASE_URL`). Gates: `uv run pytest test/unit test/golden` (760 passed, 4 skipped) +
+the db-integration run against a live `PostgresRepository` (10 passed) + `uv run mypy helixpay
+scripts/adjudicate_contradictions.py scripts/recompute_contradictions.py` (clean, 76 files).
+
+## Success Criteria
+
+See **Acceptance** above: $0 unit/integration suite green; a 2nd sweep on an unchanged store issues
+0 LLM calls (content cache); oracle catch-rate never below the SP_028a floor; the output schema has
+no winner field and both sides are always cited; a claim↔link pair is unrepresentable by
+construction.
+
+### Pre-Implementation Review
+
+- **Iteration 1** (2026-06-11, architect-reviewer + code-reviewer, plan-blind to each other) — severity 1 CRITICAL + several HIGH; both PROCEED-WITH-FIXES, no split. CRITICAL: heterogeneous single-index cluster invites a claim↔link pair the frozen `Contradiction` cannot represent. HIGH: signature-sort for index stability; `[llm]` note must embed both values; verdict-absent vs present-but-empty arbitration; print-only `--dry-run`; dedup'd floor; drop `source_uri` from the cache key; name the version-bump test. Files reviewed: SP_028b_llm_adjudication.md, helixpay/ingest/contradict.py, helixpay/ingest/extract/llm.py, helixpay/contracts/models.py, eval/contradiction_recall.py, scripts/recompute_contradictions.py.
+- **Iteration 2** (2026-06-11, revision re-reviewed vs iteration-1) — severity 0 CRITICAL / 0 HIGH remaining; revised to two labeled signature-sorted blocks (mixed pair impossible), content cache sans `source_uri`, verbatim-value note, verdict-absent/empty arbitration, print-only dry-run, dedup'd floor, `MAX_CLUSTER_MEMBERS` cap, + version-bump / member-order / oracle-note tests; cleared for implementation. Files reviewed: SP_028b_llm_adjudication.md.
+
+### Post-Implementation Review
+
+- **Iteration 1** (2026-06-11, code-reviewer, plan-blind, code+tests only) — severity 0 CRITICAL, 2 HIGH (`Cluster` frozen+mutable list → `tuple`; `_deterministic_floor` O(N×G) → fetch group lists once), 1 MEDIUM (cache-key separator → JSON), 2 missing drop tests; SHIP-WITH-FIXES, all applied. Files reviewed: helixpay/ingest/adjudicate.py, prompts/adjudicate_contradictions.md, scripts/adjudicate_contradictions.py, helixpay/ingest/extract/llm.py, test/unit/ingest/test_adjudicate.py, test/unit/ingest/test_llm_temperature.py, test/integration/db/test_adjudicate_integration.py.
+- **Iteration 2** (2026-06-11, architect-reviewer, plan-blind) — severity 0 CRITICAL / 0 HIGH, 1 MEDIUM (de-duplicate `_DedupWriter` into the ingest layer — applied: new helixpay/ingest/dedup.py imported by both the SP_028a sweep and this floor) + 3 LOW follow-ups; SHIP-WITH-FIXES; never-resolve + claim↔link-unrepresentable + layer-boundary invariants verified against code. Files reviewed: helixpay/ingest/adjudicate.py, helixpay/ingest/dedup.py, scripts/recompute_contradictions.py, helixpay/ingest/extract/llm.py, test/unit/ingest/test_adjudicate.py, test/integration/db/test_adjudicate_integration.py.
+
 ## Progress
 
 - **Stage 2 (plan)** 2026-06-11 — written (split out of SP_028 per the convergent Stage-3
@@ -267,3 +301,31 @@ remain.
   `--dry-run`; dedup'd deterministic floor; `source_uri` excluded from signatures; `MAX_CLUSTER_MEMBERS`
   with logged cap; version-bump + member-order + oracle-note tests added to the TDD list; leak-guard
   + logging-hygiene called out. No CRITICAL/HIGH remain open → cleared for implementation.
+- **Stage 4 (implementation, TDD)** 2026-06-11 — failing-test-first per unit. Temperature seam
+  (`test_llm_temperature.py`), then `adjudicate.py` against `test_adjudicate.py` (15 cases:
+  two-block cluster gen, member-order + content-key stability, version-bump invalidation,
+  claim-pair / link-pair writes, out-of-range + self-pair + empty-link-block drops, verbatim-value
+  note, empty-verdict authoritative, undecodable→floor, oversized→floor+cap, cache 0-call re-run,
+  print-only dry-run), the prompt (synthetic only), and the gated CLI. db-integration
+  (`test_adjudicate_integration.py`) verified end-to-end against a live `PostgresRepository` in the
+  `helixpay_default` network ($0 stub): planted same-period revenue conflict surfaces as a claim
+  pair, multi-valued `pain_point` does not, solid-vs-dotted line surfaces as a link pair, 2nd sweep
+  is 0-call. `uv run pytest test/unit test/golden` → 760 passed, 4 skipped; integration → 10 passed;
+  `uv run mypy helixpay scripts/...` → clean (76 files).
+- **Stage 5 (post-impl review, 2 independent plan-blind contexts)** 2026-06-11 — code-reviewer +
+  architect-reviewer, code+tests only. Both: **SHIP-WITH-FIXES, zero CRITICAL.** Invariants verified
+  against the code: "never resolve" upheld (no winner field), the claim↔link mixed pair is
+  unrepresentable BY CONSTRUCTION (two-block discriminant), layer boundary respected (ingest never
+  imports db; `SweepRepository` structural extension is sound), Opus+temp-0 seam additive, prompt
+  leak-free, single-writer / fallback-arbitration / dry-run / cache all correct. Fixes APPLIED:
+  (H1) `Cluster` list fields → `tuple` (real immutability); (H2) `_deterministic_floor` takes the
+  store-wide group lists fetched once in `adjudicate_store` (one scan, not O(subjects×groups));
+  (architect MEDIUM) extracted the duplicated `_DedupWriter` into the shared `helixpay/ingest/dedup.py`
+  — both the SP_028a sweep and this floor now import the SAME `DedupWriter` (can't drift); (M3)
+  cache-key blob JSON-serialized (no separator-injection surface); (M1/M2) added empty-link-block
+  + self-pair drop tests. Re-ran: 760 + 29 targeted + 10 integration green, mypy clean. LOW items
+  (CLI smoke test, raw-predicate-to-detect inherited pattern) recorded as non-blocking follow-ups.
+- **Stage 6 (documentation)** 2026-06-11 — CLAUDE.md gotcha appended (the SP_028b paid-refiner
+  contract: two blocks, content cache + version-bump discipline, fallback arbitration, shared
+  DedupWriter, print-only dry-run, MAX_CLUSTER cap, synthetic prompt). Sprint frontmatter reconciled
+  (touches_paths +dedup.py +recompute_contradictions.py).

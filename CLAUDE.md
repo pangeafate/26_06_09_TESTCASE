@@ -400,6 +400,25 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   the ebitda sign/currency-order spurious class agrees. **Do NOT** add date-format or rounding
   equivalence to the shared `normalize.py` — it has 8 callers incl. the eval matcher, and
   `2026-05-12 ≡ May 12` drops the year → cross-year false-equality suppresses real conflicts.
+- **LLM contradiction adjudication = the PAID refiner on the SP_028a sweep (SP_028b):**
+  `helixpay/ingest/adjudicate.py` + `scripts/adjudicate_contradictions.py` — a post-ingest,
+  single-writer clear-then-rewrite pass (run AFTER `recompute_contradictions.py`) that judges each
+  subject's **cluster** with one Opus(temp-0) call: DROPS same-fact-different-words lexical
+  candidates (precision) and ADDS cross-predicate claim pairs + solid-vs-dotted link pairs (recall),
+  never resolving (schema has NO winner field). Baked-in rules (Stage-3/5 findings): **two labeled
+  blocks** CLAIM `C1..Cn` + LINK `L1..Lm` (reports_to+dotted_line_to); a pair is `block`+two indices
+  INTO that block, so a claim↔link pair (which `Contradiction` can't represent) is structurally
+  impossible; out-of-range/self index drops. **Content-hash cache** keyed on `(model, PROMPT_VERSION,
+  NORM_VERSION, sorted member signatures)` — NOT ids, `source_uri` EXCLUDED → re-sweep of an
+  unchanged store is **$0**; bump NORM_VERSION/PROMPT_VERSION on a normalize/prompt change or a stale
+  verdict is reused. **Fallback:** verdict ABSENT → SP_028a deterministic floor (shared
+  `helixpay/ingest/dedup.py` `DedupWriter`); PRESENT-but-empty → authoritative (no floor, else the
+  dropped pair returns). Members are **signature-sorted** before numbering (read+write) so re-seed
+  ids don't move the map. `--dry-run` is print-only/$0. `MAX_CLUSTER_MEMBERS=40` → oversized subject
+  (HelixPay) falls to the floor (no cross-predicate recall) and is LOGGED. Prompt uses ONLY synthetic
+  values (year 2099) so the SP_027 leak guard stays green. All code+unit+db tests are $0 (stub
+  client); paid Opus is the gated CLI only. Temperature seam additive: `AnthropicClient(temperature=…)`
+  omits the kwarg when `None` → pre-SP_028b callers byte-identical.
 - **The extraction prompt was leaking ground truth, and a guard now blocks it (SP_027):** SP_019's
   "re-record prompt surgery" (and later SP_021/SP_026) built few-shot examples from **real graded
   corpus facts** — `extract_claims.md` literally showed the model `HelixPay revenue SGD 14.2M @
@@ -412,7 +431,7 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   test_golden_values_and_subjects_do_not_leak_into_prompts` — it loads `eval.run.load_golden`
   bar-fact **values AND subjects**, allowlists only the structural `{HelixPay, HelixPay SEA,
   HelixPay Brasil}`, and word-boundary-scans every `prompts/*.md`. Removing the
-  `Confluence platform → Project Confluence` hint is safe: `seed/roster.py` already seeds those
+  `Confluence platform → Project Confluence` hint is safe: `helixpay/seed/roster.py` already seeds those
   surface aliases, so canonicalization lives in the seed, not the prompt. **The de-leak only
   changes FUTURE extractions; the existing `helixpay_full` DB / `.replay-cache` were recorded under
   the leaked prompt, so a paid re-record is required to learn the true uncoached recall.**

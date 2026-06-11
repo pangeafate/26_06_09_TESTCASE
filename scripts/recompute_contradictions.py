@@ -27,46 +27,17 @@ import argparse
 import sys
 from typing import Hashable, cast
 
-from helixpay.contracts import Contradiction, Repository
+from helixpay.contracts import Repository
 from helixpay.db.repository import PostgresRepository
 from helixpay.ingest.contradict import detect, detect_link_conflicts
+from helixpay.ingest.dedup import DedupWriter
 from helixpay.ingest.normalize import normalize_value
 from helixpay.ingest.predicate_cardinality import should_skip_predicate
 
-
-class _DedupWriter:
-    """Wraps a repo, intercepting ``add_contradiction`` to keep one row per distinct value-pair.
-
-    ``keymap`` maps a claim id OR link id to its dedup-key component (a claim's normalized value
-    text, or a link's ``to_entity_id``). Every other repo call proxies through unchanged, so
-    ``detect``/``detect_link_conflicts`` behave exactly as against the real repo."""
-
-    def __init__(self, repo: object, keymap: dict[int, Hashable]) -> None:
-        self._repo = repo
-        self._keymap = keymap
-        self._seen: set[frozenset[Hashable]] = set()
-        self.written = 0
-        self.dropped = 0
-
-    def __getattr__(self, name: str) -> object:  # proxy get_claims/get_links/get_contradictions/…
-        return getattr(self._repo, name)
-
-    def add_contradiction(self, c: Contradiction) -> None:
-        if c.claim_a_id is not None and c.claim_b_id is not None:
-            pair = (c.claim_a_id, c.claim_b_id)
-        elif c.link_a_id is not None and c.link_b_id is not None:
-            pair = (c.link_a_id, c.link_b_id)
-        else:  # pragma: no cover - a contradiction always has one pair populated
-            self._repo.add_contradiction(c)  # type: ignore[attr-defined]
-            self.written += 1
-            return
-        key = frozenset({self._keymap.get(pair[0], pair[0]), self._keymap.get(pair[1], pair[1])})
-        if key in self._seen:
-            self.dropped += 1
-            return  # redundant source-combination of an already-recorded conflict
-        self._seen.add(key)
-        self._repo.add_contradiction(c)  # type: ignore[attr-defined]
-        self.written += 1
+# ``DedupWriter`` moved to the ingest (shared-logic) layer (SP_028b) so this sweep and the SP_028b
+# LLM-adjudication floor import the SAME value-pair dedup and cannot drift. Aliased to the former
+# private name so the rest of this module is unchanged.
+_DedupWriter = DedupWriter
 
 
 def recompute(repo: PostgresRepository) -> dict[str, int]:
