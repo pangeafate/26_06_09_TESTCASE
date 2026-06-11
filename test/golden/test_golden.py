@@ -48,9 +48,9 @@ def test_every_fact_has_core_fields(golden):
 
 def test_every_format_covered_on_the_bar(golden):
     fmts = {f.format for f in golden.bar_facts}
-    # every format except image (caption-only, informational) is on the recall bar
-    required = KNOWN_FORMATS - {"image"}
-    missing = required - fmts
+    # SP_021: image is now on the recall bar too (structured chart datapoints), so
+    # every known format must be covered.
+    missing = KNOWN_FORMATS - fmts
     assert not missing, f"formats not on the recall bar: {missing}"
 
 
@@ -60,10 +60,13 @@ def test_link_facts_have_endpoints(golden):
             assert f.from_ and f.to and f.link_type, f"{f.id}: link missing from/to/link_type"
 
 
-def test_image_facts_are_informational_only(golden):
-    for f in golden.facts:
-        if f.format == "image":
-            assert f.recall_bar is False, f"{f.id}: image facts must be recall_bar:false (§11)"
+def test_image_caption_fact_stays_informational(golden):
+    # SP_021 lifted the caption-only scope cut: structured chart DATAPOINTS may now be
+    # recall_bar:true. The CAPTION fact itself stays informational, so we never silently
+    # return to grading a prose caption as a bar fact.
+    caption = next((f for f in golden.facts if f.id == "image-revenue-trend-caption"), None)
+    assert caption is not None, "image-revenue-trend-caption fact missing"
+    assert caption.recall_bar is False, "the image caption fact must stay recall_bar:false (SP_021)"
 
 
 def test_planted_contradiction_present_with_two_dated_sources(golden):

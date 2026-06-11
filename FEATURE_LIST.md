@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-11
+last-reconciled: 2026-06-12
 authoritative-for: [features]
 ---
 
@@ -44,6 +44,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned (owning agent in pare
 | Project entities (`Project Confluence`, `CRM migration`) + `ga_target`/`completion_target` vocab (`recall-metric-vocab`) | 🚧 | `helixpay/seed/roster.py`, `metric_vocab.py` (SP_010) |
 | Shared value normalization wired into contradiction detection (`recall-normalize`) | 🚧 | `helixpay/ingest/contradict.py` → `normalize.py` (SP_010) |
 | Target-predicate temporal-slip contradiction — Confluence GA (`recall-target-contradiction`) | 🚧 | `helixpay/ingest/contradict.py` (SP_010) |
+| Structured chart extraction: image vision pass transcribes per-series datapoints (actual vs plan), extractor emits one claim per region/period; image datapoints graded on the recall bar (`img-structured-caption`, `img-chart-extract-guidance`, `img-recall-bar-golden`) | 🚧 | `helixpay/ingest/loaders/image.py`, `prompts/extract_claims.md`, `test/golden/facts.yaml` (SP_021) |
 
 ## Round 3 — provenance surface + answer UX (query side)
 

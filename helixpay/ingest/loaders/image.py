@@ -1,8 +1,10 @@
 """ImageConnector — chart/screenshot JPEGs (``source_type="image"``).
 
-Owns ``data/images/*.jpeg``. Runs a **caption-level** vision pass (deep figure OCR
-is an explicit scope cut — degrade to a caption). The vision call is an injectable
-``caption_fn`` so unit tests stub it: no network, no secret in the unit suite. The
+Owns ``data/images/*.jpeg``. Runs a **structured** vision transcription pass (SP_021
+lifted the earlier caption-only scope cut): the prompt asks for each chart series and
+its value at each period, actual-vs-plan distinction, and quarter->period-end ISO dates,
+so downstream extraction can emit one claim per datapoint. The vision call is an
+injectable ``caption_fn`` so unit tests stub it: no network, no secret in the unit suite. The
 default implementation lazily builds an Anthropic client (``config.EXTRACTION_MODEL``)
 — ``anthropic`` is imported inside the function so importing this module needs
 neither the SDK nor ``ANTHROPIC_API_KEY``.
@@ -36,9 +38,20 @@ _MEDIA_TYPES = {".jpeg": "image/jpeg", ".jpg": "image/jpeg", ".png": "image/png"
 
 _CAPTION_PROMPT = (
     "This is an internal HelixPay chart, dashboard screenshot, or org-chart image. "
-    "Caption it factually: describe what it shows and transcribe every visible number, "
-    "label, axis, legend, and date exactly as shown. Note any as-of/reporting date. "
-    "Be concise; do not speculate beyond what is visible."
+    "Transcribe it factually and in STRUCTURED form so each datapoint is recoverable — "
+    "describe what it shows and copy every visible number, label, axis, legend and date "
+    "exactly as shown; do not speculate beyond what is visible.\n"
+    "If it is a chart or graph:\n"
+    "- First state the title, the unit of measure (e.g. SGD millions), and the source/as-of line. "
+    "On THAT header line only, when the reporting period is a quarter (e.g. 'Q1 2026 close'), also "
+    "write that quarter's END date as an ISO date in parentheses — "
+    "Q1->(YYYY-03-31), Q2->(YYYY-06-30), Q3->(YYYY-09-30), Q4->(YYYY-12-31). Do NOT write ISO dates "
+    "on the per-series lines (use the bare period label there, e.g. 'Q1 26').\n"
+    "- Then list EACH data series on its own line, and for each series give its value at EACH "
+    "period by its period label. Mark every series explicitly as actual or as plan/target, using "
+    "the legend and line style (solid = actual; dashed = plan/target/forecast). Do not merge or "
+    "average series.\n"
+    "Be precise with the numbers; be concise with prose."
 )
 
 
@@ -66,7 +79,9 @@ def _default_caption_fn(image_bytes: bytes, media_type: str) -> str:
     ]
     message = client.messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=1024,
+        # a structured per-series transcription is longer than a one-line caption; give a dense
+        # multi-series chart headroom so it is not truncated mid-table (SP_021 Stage-5 L1).
+        max_tokens=2048,
         messages=[{"role": "user", "content": content}],
     )
     return "".join(

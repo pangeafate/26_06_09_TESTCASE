@@ -114,6 +114,28 @@ whose value is the **named leader**:
   - ✓ right: `{"subject": "helixpay/core", "subject_type": "other", "predicate": "top_contributor", "object_value": "Sara Wijaya", "as_of": "2026-03-31"}`
   - ✗ wrong (inverted): `{"subject": "Sara Wijaya", "subject_type": "person", "predicate": "top_contributor", "object_value": "helixpay/core"}`
 
+## Charts & figures (image transcriptions)
+
+When the span is a transcribed chart/graph (a `source_type: image` caption that lists data
+**series** and their values by period), extract the datapoints, not just the title:
+
+- A chart of a metric **by region or segment over time** yields **one claim per region per
+  period** for each **actual** series. Treat each series line independently.
+- `subject` = the **scoped region/segment entity**, canonicalized: a "SEA"/"Southeast Asia"
+  series ⇒ `HelixPay SEA`; a "Brasil"/"Brazil" series ⇒ `HelixPay Brasil`. **Never collapse a
+  regional series onto `HelixPay`** (a region's value is not the company's), and never merge two
+  regions together. `subject_type` = `other`.
+- `predicate` = the metric the chart plots, period stripped (e.g. a "Revenue by region" chart ⇒
+  `revenue`). `object_value` = the value **as transcribed, with its unit** (keep the chart's unit
+  of measure). `as_of` = that period's **end** date (the quarter-end rule above; use the ISO date
+  the caption gives next to the period label).
+- A **plan / target / forecast** series — or any series the caption marks as dashed — is **not an
+  asserted actual**: set `hypothetical: true` so it is never stored as a competing value against
+  the actual. Only the solid/actual series are realized facts.
+- Extract only datapoints actually present in the transcription; never infer an unplotted value.
+
+(Describe the shape only — the numbers come from the transcribed caption, not from here.)
+
 ## Output — STRICT JSON ONLY
 
 Return a single JSON object and nothing else (a lone ```json fence is tolerated but not

@@ -19,8 +19,9 @@
 #   For kind: link  → also from / to (canonical names) + link_type
 #   note        why this fact matters / where exactly it was read
 #
-# COVERAGE: >=1 bar fact per source format. Image facts are caption-level only
-# (deep JPEG figure extraction is a SPEC §11 scope cut) and are recall_bar:false.
+# COVERAGE: >=1 bar fact per source format. Image facts: the caption fact is
+# informational (recall_bar:false); structured chart datapoints are now graded
+# (recall_bar:true) — see SP_021, which lifted the SPEC §11 caption-only scope cut.
 
 facts:
   # ---- markdown -----------------------------------------------------------
@@ -247,7 +248,7 @@ facts:
       overview.md says "around 275" — a soft ~1-person discrepancy, not graded as a
       contradiction (approximate vs exact). The org-chart 274 is the precise figure.
 
-  # ---- image (caption-level only — SPEC §11 scope cut; informational) -------
+  # ---- image (SP_021: structured chart extraction; datapoints now graded) ---
   - id: image-revenue-trend-caption
     format: image
     kind: claim
@@ -259,8 +260,39 @@ facts:
     recall_bar: false
     note: >-
       revenue-trend-q1-2026.jpeg title "HelixPay — Revenue by region (SGD M)", source
-      line "FP&A · Q1 2026 close". recall_bar:false — deep figure extraction is a
-      deliberate scope cut (caption-level only), so this is informational, not graded.
+      line "FP&A · Q1 2026 close". recall_bar:false — caption corroboration; the chart
+      datapoints themselves are now graded by the two facts below (SP_021).
+  - id: image-brasil-revenue-q1-2026
+    format: image
+    kind: claim
+    subject: HelixPay Brasil
+    predicate: revenue
+    value: "SGD 4.8M"
+    as_of: 2026-03-31
+    source_uri: data/images/revenue-trend-q1-2026.jpeg
+    recall_bar: true
+    note: >-
+      revenue-trend-q1-2026.jpeg "Brasil actual (SGD eq)" solid line, latest point
+      Q1'26 ≈ 4.8 (SGD millions). GATING ANCHOR for image fidelity — independently
+      corroborated by interview-brasil-revenue (HelixPay Brasil / revenue / SGD 4.8M,
+      maria-silva.md). An image-SOURCED fact: only a claim carrying the jpeg source
+      satisfies it (run.py _check_claim_fact source-match), so it proves the image was
+      extracted, not the text.
+  - id: image-sea-revenue-q1-2026
+    format: image
+    kind: claim
+    subject: HelixPay SEA
+    predicate: revenue
+    value: "SGD 9.4M"
+    as_of: 2026-03-31
+    source_uri: data/images/revenue-trend-q1-2026.jpeg
+    recall_bar: true
+    note: >-
+      revenue-trend-q1-2026.jpeg "SEA actual" solid line, latest point Q1'26 ≈ 9.3–9.4
+      (SGD millions). FIDELITY PROBE — corroborated by all-hands "Q1 closed at SGD 14.2M"
+      total minus Brasil 4.8M ⇒ ~9.4 SEA. A sub-gridline read; its verdict is the honest
+      fidelity signal (a 9.3/9.40 read MISSES under normalize_value — not re-rigged).
+      HelixPay SEA is minted at ingest (not seeded), distinct from HelixPay/HelixPay Brasil.
 
 # Real planted contradictions — coexisting claims that must be surfaced, never
 # silently resolved (CLAUDE.md ontology rules). Each references fact ids above.

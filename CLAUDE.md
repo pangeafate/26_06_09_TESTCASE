@@ -356,3 +356,25 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   `eval/smoke` (where `data/` is the 9-doc smoke subset) so source_uris match the cache the smoke
   harness recorded. `replay` mode uses a `_ConstantEmbedder` (no Voyage) and `ReplayExtractor`
   (raises on miss) → genuinely $0; `run_smoke.py --record` is NOT $0 (it re-embeds via Voyage).
+- **Image/chart extraction is structured now, but graded by SOURCE (SP_021):** the image vision pass
+  (`helixpay/ingest/loaders/image.py` `_CAPTION_PROMPT`, still Sonnet) transcribes each chart **series** and its
+  per-period values (actual vs plan via solid/dashed), and `extract_claims.md`'s "Charts & figures"
+  section maps a region series → one `revenue` claim per region/period (`subject = HelixPay <Region>`;
+  regions stay distinct, never collapsed onto `HelixPay`). A golden fact sourced to the jpeg is only
+  FOUND if the satisfying claim **carries the image `source_uri`** (`run.py:_check_claim_fact`
+  source-match) — the same value present in text (e.g. Brasil 4.8M in the interview) will NOT satisfy
+  an image fact. That is the *feature*: an image-sourced recall-bar fact proves the image was
+  extracted. Three traps: (1) **line-chart reads are approximate** — grade only **text-corroborated**
+  datapoints (Brasil 4.8M ↔ interview golden; SEA 9.4M ↔ 14.2 total−4.8), and a `9.40`/`9.3` read
+  MISSES under `normalize_value` (trailing zero ≠ substring) — an honest fidelity signal, never
+  re-rig the prompt with the answer. (2) **doc `as_of` is "first ISO wins"** (`extract_iso_date`): keep
+  the period-end ISO date on the caption's **header line only**, not on per-series lines, or an early
+  quarter (Q1'25) becomes the doc as_of. (3) **the $0 replay cache predates this prompt**, so it reports
+  the image facts MISSING — only a **paid single-image re-extraction** validates them; `HelixPay SEA` is
+  **minted** at ingest (not seeded), so confirm exactly one `HelixPay SEA` row after the run.
+- **`test/golden/facts.yaml` is the MASTER oracle; `eval/smoke/facts.yaml` + `eval/sample/facts.yaml`
+  are GENERATED (SP_021):** edit the master, then re-run `python -m eval.smoke.build_smoke` (and
+  `eval.sample.build_sample`) — never hand-edit the generated subsets (they carry "do not hand-edit"
+  banners). The smoke builder filters by `manifest.py` source_uris; the **sample** manifest does NOT
+  include the image, so image facts only land in smoke. A guard (`test/golden/test_golden.py`) pins the
+  image **caption** fact to `recall_bar:false` while allowing structured datapoint facts to be graded.
