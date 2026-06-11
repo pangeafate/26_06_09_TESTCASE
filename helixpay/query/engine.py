@@ -45,6 +45,11 @@ _MAX_CLAIM_FACTS = 50  # cap claims fed to grounding/consensus (perf/noise guard
 _SNIPPET_MAX = 200  # search-result snippet clip (fetch returns full text)
 
 
+# fetch miss payload: a stable metadata key set (None-valued) so a consumer can read
+# metadata["document_id"]/["source_as_of"] without first branching on `found` (review M2).
+_MISS_META = {"source_as_of": None, "document_id": None, "ordinal": None, "found": False}
+
+
 def _snippet(text: str) -> str:
     """Clip a chunk to a short ``search`` snippet. Defined HERE in the query layer so the
     engine never imports ``db.repository._truncate_snippet`` — that would make the
@@ -199,10 +204,10 @@ class HelixQueryEngine:
         try:
             cid = int(id)
         except (TypeError, ValueError):
-            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+            return {"id": id, "title": "", "text": "", "url": "", "metadata": _MISS_META.copy()}
         chunk = self.repo.get_chunk(cid)
         if chunk is None:
-            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+            return {"id": id, "title": "", "text": "", "url": "", "metadata": _MISS_META.copy()}
         cites = {c.chunk_id: c for c in self.repo.get_chunk_sources([cid])}
         c = cites.get(cid)
         uri = c.source_uri if c else ""

@@ -178,7 +178,9 @@ class MockQueryEngine:
             "22": ("data/dashboards/metrics.html", "Q1 revenue: $3.9M", "2025-05-02", 2),
         }
         if id not in body:
-            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+            return {"id": id, "title": "", "text": "", "url": "",
+                    "metadata": {"source_as_of": None, "document_id": None,
+                                 "ordinal": None, "found": False}}
         uri, text, as_of, doc_id = body[id]
         return {"id": id, "title": uri, "text": text, "url": uri,
                 "metadata": {"source_as_of": as_of, "document_id": doc_id,

@@ -245,76 +245,20 @@ flagged so we don't overclaim. Update the module + `build_mcp` docstrings (six�
 
 Foundational ⇒ ≥2 independent iterations (per `practices/GL-SELF-CRITIQUE.md`).
 
-- **Iteration 1** — architect-reviewer, plan-as-written, adversarial; 0 CRITICAL, 3 HIGH +
-  4 MEDIUM + 3 LOW raised, REQUEST-CHANGES — all folded. Files reviewed:
-  SP_022_mcp_retrieval_tools.md, contracts/repository.py, contracts/query.py,
-  contracts/models.py, api/engine.py, query/engine.py, db/repository.py, query/retrieval.py,
-  mcp/server.py.
-  - HIGH-1: document `as_of` ≠ fact reporting period → renamed payload key to `source_as_of`
-    + documented (the CLAUDE.md as_of trap).
-  - HIGH-3: `list_documents` returning a lossy `Document` (no `raw_text`) → repo read now
-    returns the **full** model; `raw_text` is projected away at the engine `get_sources()`
-    boundary.
-  - MEDIUM-3: `{available,results}` envelope vs strict OpenAI Deep-Research shape →
-    overclaim removed; envelope kept for full-MCP-client consistency, Deep-Research adapter
-    flagged as explicit follow-up.
-  - HIGH-2 / MEDIUM-1/2/4 + LOWs: Protocol-conformance test pinned; homonym accepted
-    eyes-open with a code comment; batched provenance join; malformed-id contract;
-    docstrings — all folded into Design/Test.
-
-- **Iteration 2** — code-reviewer, plan-as-written, adversarial; 2 CRITICAL + 3 HIGH + 5
-  MEDIUM + 3 LOW, REQUEST-CHANGES — all folded. Files reviewed:
-  SP_022_mcp_retrieval_tools.md, query/engine.py, query/retrieval.py, db/repository.py,
-  contracts/models.py, contracts/repository.py, api/engine.py, mcp/server.py,
-  test/unit/query/fakes.py, test/unit/query/test_engine.py, test/unit/api/test_mcp.py.
-  - CRITICAL C1: RRF rank order destroyed if `hybrid_search` is zipped with
-    `get_chunk_sources` (latter is `ORDER BY ch.id`) → Design now mandates a `{chunk_id:
-    Citation}` dict + iterate in rank order; test pins descending-score + id-misaligned
-    re-join.
-  - CRITICAL C2: unguarded `int(id)` 500s on a non-numeric id → `try/except ValueError` →
-    `found:False`; test pins `"abc"`/`""` no-raise.
-  - HIGH H1/H2/H3: missing-citation fallback shape; uniform `.isoformat()`-or-`None` guard;
-    `MockQueryEngine.search` key parity with the real engine — all folded into Design/Test.
-  - MEDIUMs (rank-order + list_documents-ordering tests, FakeRepository conformance, homonym
-    note) + LOWs (metadata nesting, attributes exclusion, docstrings) — folded.
-
-- **Iteration 3 (confirmation)** — code-reviewer, independent re-review of the revised
-  plan; all 7 prior CRITICAL/HIGH items **CONFIRMED closed**, 1 NEW HIGH found, REQUEST-
-  CHANGES → folded. Files reviewed: SP_022_mcp_retrieval_tools.md, db/repository.py,
-  query/engine.py, query/retrieval.py.
-  - NEW HIGH (layer boundary): `search`'s snippet truncation referenced "the shared
-    truncation helper", whose only impl is `db.repository._truncate_snippet` — importing it
-    into the query layer violates the inward-dependency rule. **Resolved:** `search`
-    truncates inline via a query-layer `_snippet` helper defined in `query/engine.py`; the
-    engine never imports from `db/`. After this fold: **0 CRITICAL / 0 HIGH remain →
-    APPROVE.** Hard-stop floor (iteration 5) not reached.
+- **Iteration 1** — architect-reviewer, plan-as-written, adversarial; 0 CRITICAL, 3 HIGH + 4 MEDIUM + 3 LOW, REQUEST-CHANGES — all folded (HIGH-1 doc `as_of`≠fact period → renamed payload key `source_as_of`; HIGH-3 lossy `Document` → repo returns full model, trim at engine boundary; MEDIUM-3 `{available,results}` overclaim removed; HIGH-2/MEDIUM-1/2/4 conformance test + homonym comment + batched join + malformed-id contract). Files reviewed: SP_022_mcp_retrieval_tools.md, contracts/repository.py, contracts/query.py, contracts/models.py, api/engine.py, query/engine.py, db/repository.py, query/retrieval.py, mcp/server.py.
+- **Iteration 2** — code-reviewer, plan-as-written, adversarial; 2 CRITICAL + 3 HIGH + 5 MEDIUM + 3 LOW, REQUEST-CHANGES — all folded (CRITICAL C1 RRF rank order destroyed by zipping `get_chunk_sources` [`ORDER BY ch.id`] → mandate `{chunk_id: Citation}` dict + iterate in rank order; CRITICAL C2 unguarded `int(id)` → `try/except ValueError`→`found:False`; HIGH H1 missing-citation fallback, H2 uniform `.isoformat()`-or-`None`, H3 mock/real key parity). Files reviewed: SP_022_mcp_retrieval_tools.md, query/engine.py, query/retrieval.py, db/repository.py, contracts/models.py, contracts/repository.py, api/engine.py, mcp/server.py, test/unit/query/fakes.py, test/unit/query/test_engine.py, test/unit/api/test_mcp.py.
+- **Iteration 3 (confirmation)** — code-reviewer, re-review of the revised plan; all 7 prior CRITICAL/HIGH **CONFIRMED closed**, 1 NEW HIGH (layer-boundary: `search` snippet truncation must not import `db.repository._truncate_snippet` → resolved with a query-layer `_snippet`), folded → **0 CRITICAL / 0 HIGH, APPROVE** (hard-stop floor not reached). Files reviewed: SP_022_mcp_retrieval_tools.md, db/repository.py, query/engine.py, query/retrieval.py.
 
 ### Post-Implementation Review
 
-Plan-blind (Rule 5 — reviewer sees only code + tests).
+Foundational ⇒ ≥2 independent iterations; plan-blind (Rule 5 — reviewer sees only code + tests).
 
-- **Iteration 1** — code-reviewer, plan-blind over the diff (`helixpay/` + tests); 0
-  CRITICAL, 2 HIGH + 1 MEDIUM + 4 LOW, APPROVE-WITH-NITS. Files reviewed:
-  contracts/repository.py, db/repository.py, query/engine.py, api/engine.py, mcp/server.py,
-  test/unit/query/test_engine.py, test/unit/query/fakes.py, test/unit/api/test_mcp.py,
-  test/integration/db/test_repository_reads.py.
-  - HIGH-1 (real): `search` emitted `"id": "None"` for an `id=None` chunk (production-
-    unreachable — DB always assigns ids — but a contract gap via `FakeRepository`). **Fixed:**
-    skip `chunk.id is None` in the output loop; regression test
-    `test_search_caps_at_k_and_skips_idless_chunks`.
-  - HIGH-2: `fetch` returns a record *dict* under `results` while the scans return *lists* —
-    a deliberate lookup-vs-scan choice. **Documented** in `_retrieval`'s docstring (no code
-    change; it is tested).
-  - MEDIUM-2 (`entity_type=""` guard): already contract-correct (`""` → `WHERE
-    entity_type=''` → `[]`, matching the docstring) — left as-is, verified.
-  - LOWs: added the k-truncation test (L1); replaced the mock's `int(id)//11` document_id
-    hack with an explicit value (L3); updated the stale module docstring "two→four retrieval
-    surfaces" (L4). L2 (fragile `raw_text` assert) is moot — the `pg_repo` fixture
-    TRUNCATEs, so the DB is isolated.
+- **Iteration 1** — code-reviewer, plan-blind over the diff; 0 CRITICAL, 2 HIGH + 1 MEDIUM + 4 LOW, APPROVE-WITH-NITS — folded (HIGH-1 `search` emitted `"id":"None"` for an `id=None` chunk [production-unreachable, `FakeRepository` gap] → skip `id is None` + regression test; HIGH-2 `fetch` dict-vs-list `results` asymmetry documented in `_retrieval`; LOWs: k-truncation test, mock `document_id` explicit, stale module docstring). Files reviewed: contracts/repository.py, db/repository.py, query/engine.py, api/engine.py, mcp/server.py, test/unit/query/test_engine.py, test/unit/query/fakes.py, test/unit/api/test_mcp.py, test/integration/db/test_repository_reads.py.
+- **Iteration 2** — architect-reviewer, plan-blind, confirmation perspective; 0 CRITICAL / 0 HIGH, APPROVE-WITH-NITS — frozen `QueryEngine` confirmed unchanged, `ExposureEngine`+getattr seam sound, no SQL leak (query→db), low blast radius. MEDIUM-2 (`fetch` miss-metadata key asymmetry → `KeyError` risk) **fixed**: miss payload now carries the stable `_MISS_META` key set (None-valued). MEDIUM-1 (`get_sources` cross-layer homonym) accepted eyes-open (comment + tests); LOW (`_SNIPPET_MAX` duplicated across layers) noted, deliberate. Files reviewed: contracts/query.py, contracts/repository.py, db/repository.py, query/engine.py, api/engine.py, mcp/server.py.
 
-**Verification after folds:** 621 unit passed / 1 db-skipped, **4/4 DB integration passed
-against a throwaway pgvector pg16** (real SQL: `get_chunk` full-text + miss, `list_documents`
-ordering + `raw_text`, `list_entities` filter), mypy clean (71 files), 11/11 validators PASS.
+**Verification after folds:** 622 unit passed / 1 db-skipped, **4/4 DB integration passed against
+pgvector pg16** (real SQL: `get_chunk` full-text + miss, `list_documents` ordering + `raw_text`,
+`list_entities` filter), mypy clean (71 files), 11/11 validators PASS.
 
 ## Documentation & Deploy
 

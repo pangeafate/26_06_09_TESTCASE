@@ -399,6 +399,9 @@ def test_fetch_unknown_and_malformed_ids_degrade_without_raising(repo):
         got = eng.fetch(bad)
         assert got["metadata"]["found"] is False
         assert got["text"] == "" and got["url"] == ""
+        # stable metadata key set even on a miss (review M2 — no KeyError for consumers)
+        assert got["metadata"]["document_id"] is None
+        assert got["metadata"]["source_as_of"] is None
 
 
 def test_get_sources_lists_inventory_and_tolerates_null_as_of(repo):
