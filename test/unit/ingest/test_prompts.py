@@ -1,15 +1,74 @@
-"""Named prompts load from disk and render — no inline prompt strings in code."""
+"""Named prompts load from disk and render — no inline prompt strings in code.
+
+Also the prompt-hygiene guard (SP_027): no ground-truth value OR graded subject may appear as a
+few-shot example in any prompt (DEV_RULES §12). The extractor must EARN each graded fact by
+extracting it, never be shown it — leaked examples inflate recall for the wrong reason.
+"""
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
+from eval.run import DEFAULT_GOLDEN, load_golden
 from helixpay.ingest.extract.prompts import (
     PromptNotFoundError,
     available_prompts,
     load_prompt,
     render,
 )
+from helixpay.ingest.normalize import normalize_value
+
+_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"  # test/unit/ingest/ → repo root
+
+# The three corpus-identity entities the prompt legitimately MUST name: the task is *about*
+# HelixPay, and the region map (SEA/Brasil ⇒ HelixPay SEA/Brasil) is load-bearing for the image
+# pass. These are task definition, not a graded fact to be discovered. Everything else — graded
+# initiatives, repos, people, figures — must be fictional in examples.
+_STRUCTURAL_ALLOW = {"helixpay", "helixpay sea", "helixpay brasil"}
+
+
+def _golden_leak_tokens() -> set[str]:
+    """Each bar-fact's value AND subject (both are graded oracle fields), minus the structural
+    allowlist and pure-numeric tokens shorter than 3 chars (which collide with incidental ints)."""
+    g = load_golden(DEFAULT_GOLDEN)
+    toks: set[str] = set()
+    for f in g.bar_facts:
+        for raw in (f.value, f.subject):
+            s = (raw or "").strip()
+            if not s or s.casefold() in _STRUCTURAL_ALLOW:
+                continue
+            if s.isdigit() and len(s) < 2:  # skip only single-digit ints; 2-digit graded
+                continue                     # values (NPS "47", commit counts) ARE checked
+            toks.add(s)
+    return toks
+
+
+def _present(token: str, blob_casefold: str) -> bool:
+    """Word-boundary, casefold match — so a numeric like '412' does not match inside '2741'.
+    Checks the raw token AND its normalized text form (so a currency/unit-reformatted leak is
+    still caught); each candidate is checked independently so a short normalized form never
+    suppresses the raw token."""
+    candidates = {token, normalize_value(token)[0]}
+    for needle in candidates:
+        n = needle.strip().casefold()
+        if len(n) < 2:  # a sub-2-char needle word-matches far too much to be meaningful
+            continue
+        if re.search(rf"(?<!\w){re.escape(n)}(?!\w)", blob_casefold):
+            return True
+    return False
+
+
+def test_golden_values_and_subjects_do_not_leak_into_prompts():
+    # DEV_RULES §12 leakage guard (SP_027). Code-resident few-shots are out of scope — only
+    # prompts/*.md are model-facing, and no Python string literal feeds golden text to the model.
+    blob = "\n".join(
+        p.read_text(encoding="utf-8", errors="ignore") for p in sorted(_PROMPTS_DIR.glob("*.md"))
+    ).casefold()
+    leaked = sorted({t for t in _golden_leak_tokens() if _present(t, blob)})
+    assert not leaked, f"golden facts leaked into prompts/ (DEV_RULES §12): {leaked}"
 
 
 def test_extract_prompt_exists_and_is_named():

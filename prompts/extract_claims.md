@@ -31,8 +31,8 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
   "net new merchants"; …). The reporting period goes in `as_of`, not in the predicate. It is
   canonicalized downstream, so do not invent codes.
 - `object_value`: the value **exactly as written**, including units and currency
-  (`"SGD 14.2M"`, `"47"`, `"412"`, `"end of June"`). Keep the as-of date attached to the
-  number it belongs to.
+  (illustrative shapes only — `"SGD 9.9M"`, `"315"`, `"end of May"`). Keep the as-of date
+  attached to the number it belongs to.
 - `as_of`: the date this value is true *as of*, **always `YYYY-MM-DD`**. When the text
   gives a quarter (e.g. "Q1 2026"), emit the quarter-**end** date directly:
   Q1→`YYYY-03-31`, Q2→`YYYY-06-30`, Q3→`YYYY-09-30`, Q4→`YYYY-12-31`
@@ -62,7 +62,8 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
 - **Capture the as-of date** with every metric value. That is where staleness and
   contradictions hide.
 - **Distinguish people who share a name.** If the text refers to a specific person, use
-  their full name as written; do not merge "Maria", "Daniel Tan", etc. across people.
+  their full name as written; do not merge two different people who share a first name or
+  surname (e.g. two colleagues both written as "A. Mensah") into one.
 - Skip pure chrome (navigation, boilerplate). Prefer fewer, well-grounded claims over many
   speculative ones.
 
@@ -70,11 +71,11 @@ document. HelixPay is a B2B payments company; the corpus is a messy multi-format
 
 A KPI is a property **of an entity**; the metric is the predicate, never the subject.
 
-- A dashboard card "Q1 2026 Revenue (SGD) 14.2M":
-  - ✗ wrong: `{"subject": "Q1 2026 Revenue", "subject_type": "metric", "predicate": "Q1 2026 Revenue", "object_value": "14.2M"}`
-  - ✓ right: `{"subject": "HelixPay", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 14.2M", "as_of": "2026-03-31"}`
-- A region row "Brasil Q1 Revenue — SGD equiv 4.8M" (scoped, so it stays on the region):
-  - ✓ right: `{"subject": "HelixPay Brasil", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 4.8M", "as_of": "2026-03-31"}`
+- A dashboard card "Q2 2027 Revenue (SGD) 9.9M" (fictional figure):
+  - ✗ wrong: `{"subject": "Q2 2027 Revenue", "subject_type": "metric", "predicate": "Q2 2027 Revenue", "object_value": "9.9M"}`
+  - ✓ right: `{"subject": "HelixPay", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 9.9M", "as_of": "2027-06-30"}`
+- A region row "Brasil Q2 Revenue — SGD equiv 3.3M" (scoped, so it stays on the region):
+  - ✓ right: `{"subject": "HelixPay Brasil", "subject_type": "other", "predicate": "revenue", "object_value": "SGD 3.3M", "as_of": "2027-06-30"}`
 
 ## Initiative milestones & contributor rankings
 
@@ -82,37 +83,37 @@ Two more attributions that are easy to mis-shape:
 
 **A project / initiative milestone** (a GA / launch date, a migration cutover or
 legacy-system decommission) is a claim about the **named initiative**, not the company:
-- `subject` = the initiative as named ("Project Confluence", "CRM migration"). If the span
-  uses a surface form ("Confluence platform", "the Pipedrive → HubSpot cutover"), still use
-  the initiative entity.
+- `subject` = the initiative as named (a fictional "Project Atlas", "Ledger migration"). If the
+  span uses a surface form ("the Atlas platform", "the X → Y cutover"), still use the canonical
+  initiative entity — resolution to the seeded name happens downstream, not here.
 - `predicate` = the **canonical milestone name**: `ga_target` for a go-live / general-
   availability / launch date; `completion_target` for a migration completion / cutover /
   legacy-system decommission. (A migration **start** date is NOT a completion — keep it a
   separate, plainly-named predicate.)
 - `object_value` = the milestone date as a **clean human phrase including the year**
-  ("end of Q3 2026", "end of June 2026") — not a bare token ("end-Q3") and not a parenthetical
-  ISO date ("(2026-09-30)").
+  ("end of Q4 2027", "end of May 2027") — not a bare token ("end-Q4") and not a parenthetical
+  ISO date ("(2027-12-31)").
 - `as_of` = the date the milestone is **asserted** (the document/board date), since a target
   is a forward-looking assertion, not a realized period.
 
-Examples:
-- Board deck "Confluence platform — Original plan: end-Q2 GA. Reality: end-Q3." (12 May 2026):
-  - ✗ wrong: `{"subject": "Confluence platform", "subject_type": "product", "predicate": "ga target date (revised)", "object_value": "end-Q3 (2026-09-30)"}`
-  - ✓ right: `{"subject": "Project Confluence", "subject_type": "other", "predicate": "ga_target", "object_value": "end of Q3 2026", "as_of": "2026-05-12"}`
-- Slack "pipedrive decommission — end of june for everyone" (15 Apr 2026):
-  - ✗ wrong: `{"subject": "HelixPay", "subject_type": "other", "predicate": "pipedrive decommission date", "object_value": "end of June"}`
-  - ✓ right: `{"subject": "CRM migration", "subject_type": "other", "predicate": "completion_target", "object_value": "end of June 2026", "as_of": "2026-04-15"}`
+Examples (fictional subjects/values — they teach the SHAPE, never a real fact):
+- Board deck "Project Atlas platform — Original plan: end-Q1 GA. Reality: end-Q4." (dated):
+  - ✗ wrong: `{"subject": "Atlas platform", "subject_type": "product", "predicate": "ga target date (revised)", "object_value": "end-Q4 (2027-12-31)"}`
+  - ✓ right: `{"subject": "Project Atlas", "subject_type": "other", "predicate": "ga_target", "object_value": "end of Q4 2027", "as_of": "<board date>"}`
+- Slack "legacy ledger decommission — end of may for everyone" (dated):
+  - ✗ wrong: `{"subject": "HelixPay", "subject_type": "other", "predicate": "ledger decommission date", "object_value": "end of May"}`
+  - ✓ right: `{"subject": "Ledger migration", "subject_type": "other", "predicate": "completion_target", "object_value": "end of May 2027", "as_of": "<message date>"}`
 
 **A contributor / ownership ranking** (a doc that names who *leads* a repo, component, or
 account by an explicit measure) yields a claim whose `subject` is the thing being led and
 whose value is the **named leader**:
-- predicate `top_contributor`; `subject` = the repo/component (e.g. "helixpay/core");
+- predicate `top_contributor`; `subject` = the repo/component (e.g. a fictional "acme/core");
   `object_value` = the person named as the leader. **Direction matters: the repo is the
   subject and the person is the value — never the reverse.**
-- Only emit it when the span **explicitly states the lead** ("Sara Wijaya led Q1 with 89
-  commits"); do not infer a winner the document does not name.
-  - ✓ right: `{"subject": "helixpay/core", "subject_type": "other", "predicate": "top_contributor", "object_value": "Sara Wijaya", "as_of": "2026-03-31"}`
-  - ✗ wrong (inverted): `{"subject": "Sara Wijaya", "subject_type": "person", "predicate": "top_contributor", "object_value": "helixpay/core"}`
+- Only emit it when the span **explicitly states the lead** (a fictional "J. Okafor led Q2 with
+  73 commits"); do not infer a winner the document does not name.
+  - ✓ right: `{"subject": "acme/core", "subject_type": "other", "predicate": "top_contributor", "object_value": "J. Okafor", "as_of": "2027-06-30"}`
+  - ✗ wrong (inverted): `{"subject": "J. Okafor", "subject_type": "person", "predicate": "top_contributor", "object_value": "acme/core"}`
 
 ## Charts & figures (image transcriptions)
 
@@ -143,20 +144,20 @@ recorded state** as of the snapshot. That recorded state **is an asserted fact**
 deal — **not** hypothetical — even though the deal's outcome is still in the future. Do not
 skip a pipeline table as "speculative": extract one claim per deal attribute the row gives.
 
-- `subject` = the **account / opportunity** as named ("Northwind Logistics", "Açaí Express
-  SP"); `subject_type` = `customer`.
+- `subject` = the **account / opportunity** as named (e.g. a fictional "Acme Robotics" /
+  "Globex Retail" — use the real name from the row); `subject_type` = `customer`.
 - `predicate` = the attribute, canonical and period-stripped: `pipeline_stage`,
   `deal_amount`, `deal_owner`, `expected_close_date`, `deal_health`.
-- `object_value` = the cell value exactly as written ("Negotiation", "620K", "2026-05-12",
-  "on track").
+- `object_value` = the cell value exactly as written (illustrative shapes: a stage word, an
+  amount like "450K", an ISO date, a health phrase).
 - `as_of` = the dashboard's snapshot/export date. **This is the one case where the export
   date IS the as_of** — it dates the deal's *recorded state*, not a metric's reporting period
   (contrast the KPI-card rule above). Use the "as of <date>" header.
 - `hypothetical` = `false` for a recorded deal attribute. Only an explicitly **weighted /
-  forecast aggregate** ("total weighted pipeline 18.5M", "coverage 2.6×") is forward-looking
-  → `true`.
+  forecast aggregate** (e.g. a "total weighted pipeline" or "coverage ×" figure) is
+  forward-looking → `true`.
 
-  ✓ right: `{"subject": "Northwind Logistics", "subject_type": "customer", "predicate": "expected_close_date", "object_value": "2026-05-12", "as_of": "2026-04-21", "hypothetical": false}`
+  ✓ right (shape only — fictional values): `{"subject": "Acme Robotics", "subject_type": "customer", "predicate": "expected_close_date", "object_value": "2026-08-15", "as_of": "<snapshot date>", "hypothetical": false}`
 
 ## Output — STRICT JSON ONLY
 

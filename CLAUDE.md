@@ -382,6 +382,22 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   `org-chart.md` edge doesn't dedupe away on the links natural key (`COALESCE(as_of,'0001-01-01')`). A DB
   seeded *before* this must be **re-seeded fresh** (changing `as_of` changes the key → a re-seed adds an
   undated twin, not a no-op). Fresh `make up && seed` unaffected.
+- **The extraction prompt was leaking ground truth, and a guard now blocks it (SP_027):** SP_019's
+  "re-record prompt surgery" (and later SP_021/SP_026) built few-shot examples from **real graded
+  corpus facts** — `extract_claims.md` literally showed the model `HelixPay revenue SGD 14.2M @
+  2026-03-31`, `Project Confluence → ga_target → end of Q3 2026`, `412` net-new merchants,
+  `Sara Wijaya → helixpay/core top_contributor`, etc. (15 golden bar-fact values + 3 graded
+  subjects). That coaches the extractor with answers it's later graded on (DEV_RULES §12), so the
+  recall number can't be trusted. SP_027 replaced every example with **synthetic** subjects/values
+  (year-shifted to 2027, fictional `Project Atlas`/`Ledger migration`/`acme/core`/`J. Okafor`) that
+  teach the identical shape, and added `test/unit/ingest/test_prompts.py::
+  test_golden_values_and_subjects_do_not_leak_into_prompts` — it loads `eval.run.load_golden`
+  bar-fact **values AND subjects**, allowlists only the structural `{HelixPay, HelixPay SEA,
+  HelixPay Brasil}`, and word-boundary-scans every `prompts/*.md`. Removing the
+  `Confluence platform → Project Confluence` hint is safe: `seed/roster.py` already seeds those
+  surface aliases, so canonicalization lives in the seed, not the prompt. **The de-leak only
+  changes FUTURE extractions; the existing `helixpay_full` DB / `.replay-cache` were recorded under
+  the leaked prompt, so a paid re-record is required to learn the true uncoached recall.**
 - **MCP tools live on `ExposureEngine`, NOT frozen `QueryEngine` (SP_022/SP_023):** 12 = 4 frozen + 8
   optional on `ExposureEngine`+`HelixQueryEngine`, found by `_retrieval` `getattr` (`QueryEngine`-only →
   `{available:false}`); additive pure-read `Repository` reads (SP_009). SP_022:

@@ -123,7 +123,9 @@ def test_image_as_of_prefers_reporting_close_not_earliest_series_date(tmp_path):
 
 def test_extract_prompt_has_charts_section_without_baked_numbers():
     # the extractor must have generic chart guidance; and that section must contain NO numeric
-    # values (extract_claims.md already bakes 14.2M/4.8M elsewhere — do not compound it).
+    # values. (The 14.2M/4.8M leaks this comment used to point at were removed in SP_027; the
+    # generalized guard in test/unit/ingest/test_prompts.py now prevents any golden value from
+    # returning — keep this section likewise number-free.)
     text = _EXTRACT_PROMPT.read_text(encoding="utf-8")
     marker = "## Charts"
     assert marker in text, "extract_claims.md missing a '## Charts' guidance section"

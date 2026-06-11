@@ -34,7 +34,7 @@ pass:
 ```
 {
   "claims": [
-    {"subject": "...", "subject_type": "metric", "predicate": "...",
+    {"subject": "...", "subject_type": "other", "predicate": "...",
      "evidence": "<verbatim quote>", "object_value": "...", "as_of": "YYYY-MM-DD",
      "confidence": 0.0, "hypothetical": false}
   ],
