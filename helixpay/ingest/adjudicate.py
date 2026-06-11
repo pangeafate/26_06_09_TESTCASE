@@ -240,12 +240,13 @@ def build_cluster(repo: Repository, subject_id: int) -> Cluster:
     return Cluster(subject_id=subject_id, claims=tuple(claim_members), links=tuple(link_members))
 
 
-def cluster_cache_key(cluster: Cluster) -> str:
+def cluster_cache_key(cluster: Cluster, *, model: str = ADJUDICATE_MODEL) -> str:
     """Content hash over (model, prompt_version, norm_version, sorted member signatures). Stable
     across surrogate-id renumbering and source_uri churn; invalidated by a version bump. JSON-
-    serialized (not delimiter-joined) so a signature field can never collide across members."""
+    serialized (not delimiter-joined) so a signature field can never collide across members. The
+    ``model`` rides in the key so a Sonnet run and an Opus run never reuse each other's verdict."""
     sigs = sorted(list(m.signature) for m in (*cluster.claims, *cluster.links))
-    blob = json.dumps([ADJUDICATE_MODEL, PROMPT_VERSION, NORM_VERSION, sigs], sort_keys=True)
+    blob = json.dumps([model, PROMPT_VERSION, NORM_VERSION, sigs], sort_keys=True)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -296,12 +297,17 @@ def _render_user(cluster: Cluster) -> str:
 
 
 def adjudicate_cluster(
-    cluster: Cluster, client: LLMClient, cache: AdjudicationCache
+    cluster: Cluster,
+    client: LLMClient,
+    cache: AdjudicationCache,
+    *,
+    model: str = ADJUDICATE_MODEL,
 ) -> Optional[AdjudicationVerdict]:
     """Return the cluster's verdict, from cache or one LLM call. ``None`` means the model output
     was undecodable (call_structured dropped it) → the caller falls back to the deterministic
-    floor. An empty-but-present verdict is a real precision result and IS returned/cached."""
-    key = cluster_cache_key(cluster)
+    floor. An empty-but-present verdict is a real precision result and IS returned/cached.
+    ``model`` must match the client's model so the cache key and the call agree."""
+    key = cluster_cache_key(cluster, model=model)
     cached = cache.get(key)
     if cached is not None:
         return AdjudicationVerdict.model_validate(cached)
@@ -360,6 +366,7 @@ def adjudicate_store(
     *,
     dry_run: bool = False,
     max_cluster_members: int = MAX_CLUSTER_MEMBERS,
+    model: str = ADJUDICATE_MODEL,
 ) -> dict[str, int]:
     """Single-writer clear-then-rewrite sweep with an LLM refiner stage.
 
@@ -380,7 +387,7 @@ def adjudicate_store(
             if not cl.is_adjudicable() or cl.size() > max_cluster_members:
                 continue
             clusters += 1
-            if cache.get(cluster_cache_key(cl)) is None:
+            if cache.get(cluster_cache_key(cl, model=model)) is None:
                 est += 1
         return {
             "subjects": len(subjects), "clusters": clusters,
@@ -406,7 +413,7 @@ def adjudicate_store(
             stats["floor_rows"] += _deterministic_floor(repo, sid, claim_groups, link_groups)
             continue
         stats["clusters"] += 1
-        verdict = adjudicate_cluster(cl, client, cache)
+        verdict = adjudicate_cluster(cl, client, cache, model=model)
         if verdict is None:
             stats["floor_rows"] += _deterministic_floor(repo, sid, claim_groups, link_groups)
         else:
@@ -416,9 +423,11 @@ def adjudicate_store(
     return stats
 
 
-def build_adjudicator_client() -> AnthropicClient:
-    """The paid client: Opus at temperature 0 (deterministic). Built only by the gated CLI."""
-    return AnthropicClient(model=ADJUDICATE_MODEL, temperature=0)
+def build_adjudicator_client(model: str = ADJUDICATE_MODEL) -> AnthropicClient:
+    """The paid client at temperature 0 (deterministic). Defaults to the Opus synthesis tier;
+    the gated CLI may override ``model`` (e.g. the cheaper ``claude-sonnet-4-6``) — the chosen
+    model rides in the cache key, so verdicts never cross model boundaries."""
+    return AnthropicClient(model=model, temperature=0)
 
 
 __all__ = [

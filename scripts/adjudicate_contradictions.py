@@ -22,6 +22,7 @@ import sys
 
 from helixpay.db.repository import PostgresRepository
 from helixpay.ingest.adjudicate import (
+    ADJUDICATE_MODEL,
     JsonFileCache,
     adjudicate_store,
     build_adjudicator_client,
@@ -35,17 +36,22 @@ def main(argv: list[str] | None = None) -> int:
         help="print cluster count + estimated LLM calls; write nothing, spend nothing",
     )
     ap.add_argument("--cache-dir", default=".adjudication-cache", help="content-keyed verdict cache")
+    ap.add_argument(
+        "--model", default=ADJUDICATE_MODEL,
+        help=f"adjudication model (default {ADJUDICATE_MODEL}; the model rides in the cache key, "
+        "so a cheaper model uses a separate verdict namespace)",
+    )
     args = ap.parse_args(argv)
 
     repo = PostgresRepository.from_url()
     cache = JsonFileCache(args.cache_dir)
 
     if args.dry_run:
-        stats = adjudicate_store(repo, _NoClient(), cache, dry_run=True)
-        print("DRY RUN — nothing written, nothing spent", file=sys.stderr)
+        stats = adjudicate_store(repo, _NoClient(), cache, dry_run=True, model=args.model)
+        print(f"DRY RUN ({args.model}) — nothing written, nothing spent", file=sys.stderr)
     else:
-        client = build_adjudicator_client()
-        stats = adjudicate_store(repo, client, cache)
+        client = build_adjudicator_client(model=args.model)
+        stats = adjudicate_store(repo, client, cache, model=args.model)
 
     for k, v in stats.items():
         print(f"{k:24} {v}", file=sys.stderr)

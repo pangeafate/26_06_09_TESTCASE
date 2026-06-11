@@ -179,6 +179,21 @@ def test_cache_key_is_content_not_surrogate_id_and_excludes_source_uri():
     assert cluster_cache_key(a) == cluster_cache_key(b)
 
 
+def test_model_is_part_of_cache_key():
+    # The model rides in the key, so a Sonnet run and an Opus run never share a cached verdict.
+    cl = build_cluster(FakeRepo([_c(1, 10, "revenue", "SGD 14.2M"), _c(2, 10, "nps", "47")]), 10)
+    assert cluster_cache_key(cl, model="claude-sonnet-4-6") != cluster_cache_key(cl, model="claude-opus-4-8")
+
+
+def test_build_adjudicator_client_model_override():
+    from helixpay.ingest.adjudicate import ADJUDICATE_MODEL, build_adjudicator_client
+
+    assert build_adjudicator_client().model == ADJUDICATE_MODEL  # default = Opus synthesis tier
+    assert build_adjudicator_client().temperature == 0
+    c = build_adjudicator_client(model="claude-sonnet-4-6")
+    assert c.model == "claude-sonnet-4-6" and c.temperature == 0
+
+
 def test_version_bump_invalidates_cache_key(monkeypatch):
     cl = build_cluster(FakeRepo([_c(1, 10, "revenue", "SGD 14.2M"), _c(2, 10, "nps", "47")]), 10)
     base = cluster_cache_key(cl)
