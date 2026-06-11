@@ -26,9 +26,11 @@ Ask a question directly once ingested:
 docker compose run --rm app helixpay ask "Who is the Head of Engineering and when did that become true?"
 # or hit the agent surfaces:
 #   REST:  POST http://127.0.0.1:8000/ask   {"question": "..."}
-#   MCP:   streamable-HTTP at /mcp  (tools: ask, get_entity, get_org_chart,
+#   MCP:   streamable-HTTP at /mcp  (12 tools: ask, get_entity, get_org_chart,
 #                                    find_contradictions, get_sources, search,
-#                                    fetch, list_entities)
+#                                    fetch, list_entities, get_timeline,
+#                                    get_relationships, list_metrics,
+#                                    get_claims_by_predicate)
 ```
 
 Secrets are read **only** from the environment via `helixpay.config`

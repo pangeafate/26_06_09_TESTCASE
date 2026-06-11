@@ -164,6 +164,20 @@ class Contradiction(BaseModel):
     link_b_id: Optional[int] = None
 
 
+class MetricVocab(BaseModel):
+    """One controlled-vocabulary metric (the ``metric_vocab`` table).
+
+    A new additive model (SP_023) for a previously-unmodeled table — it backs the
+    ``list_metrics`` read so an agent can discover the queryable predicate vocabulary
+    (``canonical_key`` + its human ``display_name`` + the ``aliases`` that canonicalize onto
+    it). It is a *new* type, not a fork of a frozen one.
+    """
+
+    canonical_key: str
+    display_name: Optional[str] = None
+    aliases: list[str] = Field(default_factory=list)
+
+
 class Citation(BaseModel):
     """Provenance attached to an answer. ``as_of`` is what makes staleness visible.
 
@@ -226,6 +240,7 @@ __all__ = [
     "Claim",
     "Link",
     "Contradiction",
+    "MetricVocab",
     "Citation",
     "AnswerBundle",
     "OrgNode",

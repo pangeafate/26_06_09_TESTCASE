@@ -63,3 +63,20 @@ grader. Each story notes the gate's contribution and the owning agent for the re
   never raises on a bad id; `list_entities('other')` enumerates regions/org-units.
 - Gate: `ExposureEngine` optional surfaces over `HelixQueryEngine` + additive `Repository`
   reads (`get_chunk`/`list_documents`/`list_entities`). Full: SP_022.
+
+## US-8 — Graph & temporal reads for connected agents (SP_023)
+> As an agent connected to the live MCP, I can read the *history* of a fact (`get_timeline`),
+> traverse an entity's relationships beyond the org chart (`get_relationships`), discover the
+> queryable metric vocabulary (`list_metrics`), and compare one predicate across entities
+> (`get_claims_by_predicate`) — so temporal, graph, vocabulary-discovery and cross-entity
+> questions are answerable without `ask` synthesis.
+
+- Acceptance: all four tools return `available:true` against the real engine; `get_timeline`
+  shows the supersession chain + coexisting conflicting values in order, each cited, and
+  degrades to `resolved:false` on an ambiguous entity; `get_relationships` returns both
+  directions with resolved endpoint names; `get_claims_by_predicate` canonicalizes
+  raw/alias/period-qualified spellings onto one key across subjects (excluding distinct
+  suffixes and glued tokens).
+- Gate: `ExposureEngine` optional surfaces + additive `Repository` reads (`get_links`
+  `to_entity_id`, `list_metrics`, `get_claims_by_predicate`) + the `MetricVocab` model; frozen
+  `QueryEngine` untouched; `$0` (pure DB reads). Full: SP_023.

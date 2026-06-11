@@ -27,6 +27,7 @@ from .models import (
     Document,
     Entity,
     Link,
+    MetricVocab,
     OrgNode,
 )
 
@@ -103,10 +104,15 @@ class Repository(Protocol):
         self,
         link_type: Optional[str] = None,
         from_entity_id: Optional[int] = None,
+        to_entity_id: Optional[int] = None,
     ) -> list[Link]:
-        """All links, optionally filtered by ``link_type`` and/or ``from_entity_id``.
-        ``from_entity_id`` was appended (SP_009) so the new parameter is keyword- and
-        positionally-backward-compatible: ``get_links("reports_to")`` is unchanged."""
+        """All links, optionally filtered by ``link_type``, ``from_entity_id`` and/or
+        ``to_entity_id``. ``from_entity_id`` was appended (SP_009) and ``to_entity_id``
+        appended (SP_023), each keyword- and positionally-backward-compatible:
+        ``get_links("reports_to")`` is unchanged. ``from_entity_id`` selects **outgoing**
+        edges, ``to_entity_id`` **incoming** ones; supplying both ANDs them (the single
+        ``A→B`` edge). This is what makes incoming traversal ("who reports to / owns /
+        is member_of X") reachable without a second method."""
         ...
 
     def get_org_subtree(self, root_id: Optional[int] = None, as_of: Optional[date] = None) -> OrgNode:
@@ -150,6 +156,29 @@ class Repository(Protocol):
         """Enumerate entities (backs the MCP ``list_entities`` tool), optionally
         filtered to one ``entity_type``. Unknown/empty type → ``[]`` (never raises),
         ordered by ``entity_type`` then ``canonical_name``."""
+        ...
+
+    # -- graph/temporal reads for the MCP tool surface (SP_023) ------------ #
+    def list_metrics(self) -> list[MetricVocab]:
+        """The controlled metric vocabulary (backs MCP ``list_metrics``) — every
+        ``metric_vocab`` row as a ``MetricVocab`` (canonical key + display name + aliases),
+        ordered by ``canonical_key``. Empty table → ``[]``. Lets an agent discover which
+        predicates it may ask about."""
+        ...
+
+    def get_claims_by_predicate(
+        self, predicate: str, subject_id: Optional[int] = None
+    ) -> list[Claim]:
+        """Every claim whose **canonicalized** predicate matches ``predicate``, across all
+        subjects (backs MCP ``get_claims_by_predicate`` and, with ``subject_id``, the
+        ``get_timeline`` history). Matching is canonicalize-aware (alias + leading
+        period-qualifier strip) because predicates are canonicalized on read, not on write,
+        so an exact ``predicate = %s`` would miss raw/period-qualified spellings. A
+        *distinct* suffix ("revenue vs plan") stays its own predicate. Unknown predicate →
+        matches that literal only (never raises). Returns **all** matches incl. superseded
+        claims (each carries ``superseded_by``/``valid_to``) — the ontology never collapses.
+        ``subject_id`` narrows to one subject; ordered ``subject_entity_id``, then ``as_of``
+        DESC, then ``id``."""
         ...
 
     def known_content_hashes(self) -> set[str]:

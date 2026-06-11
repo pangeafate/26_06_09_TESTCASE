@@ -8,11 +8,14 @@ this server is built for streamable-HTTP and mounted into the shared ASGI app at
 Tools, typed per object type:
   ask · get_entity · get_org_chart · find_contradictions
   get_sources · search · fetch · list_entities
+  get_timeline · get_relationships · list_metrics · get_claims_by_predicate
 
-The four core tools are guaranteed by the frozen ``QueryEngine`` Protocol. ``get_sources``,
-``search``, ``fetch`` and ``list_entities`` are retrieval surfaces (``ExposureEngine``
-extension); they dispatch through ``_retrieval`` and degrade to a structured "unavailable"
-payload if the injected engine does not implement them.
+The four core tools are guaranteed by the frozen ``QueryEngine`` Protocol. The other eight —
+the SP_022 retrieval primitives (``get_sources``/``search``/``fetch``/``list_entities``) and
+the SP_023 graph/temporal reads (``get_timeline``/``get_relationships``/``list_metrics``/
+``get_claims_by_predicate``) — are optional surfaces (``ExposureEngine`` extension); they
+dispatch through ``_retrieval`` and degrade to a structured "unavailable" payload if the
+injected engine does not implement them.
 """
 
 from __future__ import annotations
@@ -65,7 +68,7 @@ def _retrieval(method: str, *args: Any, **kwargs: Any) -> dict:
 
 
 def build_mcp(name: str = "helixpay") -> FastMCP:
-    """Construct the FastMCP server with all eight tools registered. Returned so the ASGI
+    """Construct the FastMCP server with all twelve tools registered. Returned so the ASGI
     app can mount ``.streamable_http_app()`` and tests can introspect tools directly."""
     mcp = FastMCP(
         name,
@@ -124,6 +127,37 @@ def build_mcp(name: str = "helixpay") -> FastMCP:
         metric/other). Use for corpus-wide 'what X are covered' questions — e.g.
         ``entity_type='other'`` lists regions/org-units (HelixPay Brasil, SEA, …)."""
         return _retrieval("list_entities", entity_type)
+
+    @mcp.tool()
+    def get_timeline(entity: str, predicate: str) -> dict:
+        """The chronological history of a fact: every claim for ``entity``'s ``predicate`` in
+        time order, with the supersession chain (``superseded_by``/``valid_to``) and any
+        coexisting conflicting values, each cited + ``as_of``-stamped. The ontology versions
+        facts (never overwrites) — this surfaces that. An ambiguous/unknown entity →
+        ``resolved: false``."""
+        return _retrieval("get_timeline", entity, predicate)
+
+    @mcp.tool()
+    def get_relationships(entity: str, link_type: Optional[str] = None) -> dict:
+        """An entity's relationships in BOTH directions, beyond the org chart: outgoing +
+        incoming ``owns``/``member_of``/``dotted_line_to``/``mentions``/``reports_to``
+        (optionally filtered to one ``link_type``). Answers 'who owns X', 'who is on team Z',
+        'who is connected to W'. Each edge carries resolved endpoint names + provenance."""
+        return _retrieval("get_relationships", entity, link_type)
+
+    @mcp.tool()
+    def list_metrics() -> dict:
+        """List the queryable metric vocabulary (canonical key + display name + aliases) — so
+        you can discover which predicates to ask about (e.g. for ``get_claims_by_predicate``
+        or ``get_timeline``)."""
+        return _retrieval("list_metrics")
+
+    @mcp.tool()
+    def get_claims_by_predicate(predicate: str) -> dict:
+        """Every claim for one ``predicate`` across ALL subjects — for 'compare revenue across
+        regions/quarters'. Canonicalizes the predicate (so 'ARR'/'annual recurring revenue'
+        land together) and surfaces conflicting/superseded values without collapsing them."""
+        return _retrieval("get_claims_by_predicate", predicate)
 
     return mcp
 

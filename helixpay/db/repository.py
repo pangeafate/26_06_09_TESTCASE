@@ -27,6 +27,7 @@ from helixpay.contracts import (
     Document,
     Entity,
     Link,
+    MetricVocab,
     OrgNode,
 )
 from helixpay.db.connection import DictConnection, connect
@@ -457,6 +458,7 @@ class PostgresRepository:
         self,
         link_type: Optional[str] = None,
         from_entity_id: Optional[int] = None,
+        to_entity_id: Optional[int] = None,
     ) -> list[Link]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -466,6 +468,9 @@ class PostgresRepository:
         if from_entity_id is not None:
             clauses.append("from_entity_id = %s")
             params.append(from_entity_id)
+        if to_entity_id is not None:  # SP_023 — incoming-edge traversal
+            clauses.append("to_entity_id = %s")
+            params.append(to_entity_id)
         sql = "SELECT * FROM links"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
@@ -706,6 +711,72 @@ class PostgresRepository:
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return [_entity_from_row(r) for r in cur.fetchall()]
+
+    # ------------------------------------------------------------------ #
+    # graph/temporal reads for the MCP tool surface (SP_023)
+    # ------------------------------------------------------------------ #
+    def list_metrics(self) -> list[MetricVocab]:
+        """Every ``metric_vocab`` row as a ``MetricVocab`` (backs MCP ``list_metrics``),
+        ordered by ``canonical_key``. Empty table → ``[]``."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT canonical_key, display_name, aliases FROM metric_vocab "
+                "ORDER BY canonical_key ASC"
+            )
+            return [
+                MetricVocab(
+                    canonical_key=r["canonical_key"],
+                    display_name=r.get("display_name"),
+                    aliases=list(r.get("aliases") or []),
+                )
+                for r in cur.fetchall()
+            ]
+
+    def get_claims_by_predicate(
+        self, predicate: str, subject_id: Optional[int] = None
+    ) -> list[Claim]:
+        """All claims whose canonicalized predicate matches ``predicate`` (backs MCP
+        ``get_claims_by_predicate``; with ``subject_id``, the ``get_timeline`` history).
+
+        Predicates are canonicalized on *read*, not on write, so an exact ``predicate = %s``
+        would miss raw/period-qualified spellings. The match set is the canonical key, the raw
+        input, and the canonical key's vocab **aliases** — so a claim stored literally as
+        ``"arr"`` is found by ``get_claims_by_predicate("revenue")``. A claim's stored
+        predicate matches if its lowercased form, OR its leading-period-stripped form, is in
+        the set.
+
+        The period strip uses ``[[:space:]/-]+`` (one-or-more separator): POSIX ERE has no
+        ``\\b``, so a ``*`` (zero-or-more) would over-strip a *glued* token (``"fy2026 ebitda"``
+        → ``"ebitda"``), diverging from Python's ``_strip_period_qualifier``. Requiring ≥1
+        separator reproduces the word boundary for every real period-qualified predicate
+        (``"q1 2026 revenue"`` → ``"revenue"``) while refusing to split a glued token."""
+        key = self.canonical_predicate(predicate)
+        terms = {key.strip().lower(), predicate.strip().lower()}
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT aliases FROM metric_vocab WHERE lower(canonical_key) = lower(%s)",
+                (key,),
+            )
+            row = cur.fetchone()
+        if row and row.get("aliases"):
+            terms.update(a.strip().lower() for a in row["aliases"])
+        match_set = sorted(terms)  # psycopg ANY(%s) needs a list, never a set
+
+        sql = (
+            "SELECT * FROM claims WHERE ("
+            "  lower(predicate) = ANY(%s)"
+            "  OR regexp_replace(lower(predicate),"
+            "       '^((q[1-4]|h[12]|fy|20[0-9]{2})[[:space:]/-]+)+', '') = ANY(%s)"
+            ")"
+        )
+        params: list[Any] = [match_set, match_set]
+        if subject_id is not None:
+            sql += " AND subject_entity_id = %s"
+            params.append(subject_id)
+        sql += " ORDER BY subject_entity_id ASC NULLS LAST, as_of DESC NULLS LAST, id ASC"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [_claim_from_row(r) for r in cur.fetchall()]
 
     def known_content_hashes(self) -> set[str]:
         """Every ``documents.content_hash`` already stored (compute-idempotency)."""

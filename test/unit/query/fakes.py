@@ -19,6 +19,7 @@ from helixpay.contracts import (
     Document,
     Entity,
     Link,
+    MetricVocab,
     OrgNode,
 )
 
@@ -43,6 +44,7 @@ class FakeRepository:
         self.vocab: dict[str, str] = {}  # lowercased alias -> canonical key
         self.documents: dict[int, Document] = {}  # SP_022: document inventory
         self.chunks: dict[int, Chunk] = {}  # SP_022: chunk-by-id (fetch)
+        self.metrics: list[MetricVocab] = []  # SP_023: metric vocabulary
 
     # -- helpers used by tests ------------------------------------------- #
     def add_document(self, doc: Document) -> int:
@@ -56,6 +58,11 @@ class FakeRepository:
         chunk.id = cid
         self.chunks[cid] = chunk
         return cid
+
+    def add_metric(self, metric: MetricVocab) -> None:
+        self.metrics.append(metric)
+        for alias in [metric.canonical_key, *metric.aliases]:
+            self.vocab[alias.strip().lower()] = metric.canonical_key
 
     def add_entity(self, e: Entity) -> int:
         eid = e.id or (max(self.entities) + 1 if self.entities else 1)
@@ -108,12 +115,15 @@ class FakeRepository:
         self,
         link_type: Optional[str] = None,
         from_entity_id: Optional[int] = None,
+        to_entity_id: Optional[int] = None,
     ) -> list[Link]:
         out = list(self.links)
         if link_type:
             out = [link for link in out if link.link_type == link_type]
         if from_entity_id is not None:
             out = [link for link in out if link.from_entity_id == from_entity_id]
+        if to_entity_id is not None:  # SP_023 — incoming edges
+            out = [link for link in out if link.to_entity_id == to_entity_id]
         return out
 
     def get_org_subtree(
@@ -165,6 +175,33 @@ class FakeRepository:
             if entity_type is None or e.entity_type == entity_type
         ]
         return sorted(out, key=lambda e: (e.entity_type, e.canonical_name))
+
+    # -- SP_023 graph/temporal reads ------------------------------------- #
+    def list_metrics(self) -> list[MetricVocab]:
+        return sorted(self.metrics, key=lambda m: m.canonical_key)
+
+    def get_claims_by_predicate(
+        self, predicate: str, subject_id: Optional[int] = None
+    ) -> list[Claim]:
+        # Canonical-equality match (alias-aware via self.vocab). The SQL period-strip is NOT
+        # reproduced here — unit tests use canonical/alias predicate spellings; period-qualified
+        # matching is proven in the db-integration test (SP_023 Stage-3 M2).
+        target = self.canonical_predicate(predicate)
+        out = [
+            c
+            for c in self.claims.values()
+            if self.canonical_predicate(c.predicate) == target
+            and (subject_id is None or c.subject_entity_id == subject_id)
+        ]
+        return sorted(
+            out,
+            key=lambda c: (
+                c.subject_entity_id is None,  # NULLS LAST (matches the SQL ordering)
+                c.subject_entity_id or 0,
+                -(c.as_of.toordinal() if c.as_of else 0),
+                c.id or 0,
+            ),
+        )
 
     def resolve_entity(
         self,

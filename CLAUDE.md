@@ -378,17 +378,16 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   banners). The smoke builder filters by `manifest.py` source_uris; the **sample** manifest does NOT
   include the image, so image facts only land in smoke. A guard (`test/golden/test_golden.py`) pins the
   image **caption** fact to `recall_bar:false` while allowing structured datapoint facts to be graded.
-- Seeded `reports_to`/`dotted_line_to` edges are seeded **undated** (`as_of=None`, SP_011)
-  so the cited edge extracted from `org-chart.md` (export-dated) doesn't dedupe away against
-  them on the links natural key (`COALESCE(as_of,'0001-01-01')`). Consequence: a DB seeded
-  *before* this change must be **re-seeded fresh** (or have its stamped reporting rows
-  dropped) — changing the `as_of` changes the natural key, so a re-seed *adds* an undated
-  twin instead of being a no-op. Fresh `make up && seed` is unaffected.
-- **MCP retrieval tools live on `ExposureEngine`, NOT frozen `QueryEngine` (SP_022):** 8 tools = 4
-  frozen + 4 optional (`search`/`fetch`/`get_sources`/`list_entities`) on `ExposureEngine`+
-  `HelixQueryEngine`, found by `_retrieval` `getattr` (`QueryEngine`-only engine → `{available:false}`).
-  Their `Repository` reads (`get_chunk`/`list_documents`/`list_entities`) are additive pure-read
-  extensions (SP_009 precedent). Traps: `search`'s `source_as_of` is the **document** date (not a fact's
-  reporting period); it joins provenance **by chunk id** not zip (`get_chunk_sources` is `ORDER BY
-  chunk_id` + drops missing-doc joins); `_snippet` is query-layer (never import db's). `fetch` = full
-  text, bad id → `found:false`.
+- Seeded `reports_to`/`dotted_line_to` edges are **undated** (`as_of=None`, SP_011) so the export-dated
+  `org-chart.md` edge doesn't dedupe away on the links natural key (`COALESCE(as_of,'0001-01-01')`). A DB
+  seeded *before* this must be **re-seeded fresh** (changing `as_of` changes the key → a re-seed adds an
+  undated twin, not a no-op). Fresh `make up && seed` unaffected.
+- **MCP tools live on `ExposureEngine`, NOT frozen `QueryEngine` (SP_022/SP_023):** 12 = 4 frozen + 8
+  optional on `ExposureEngine`+`HelixQueryEngine`, found by `_retrieval` `getattr` (`QueryEngine`-only →
+  `{available:false}`); additive pure-read `Repository` reads (SP_009). SP_022:
+  `search`/`fetch`/`get_sources`/`list_entities` (`search.source_as_of`=**document** date, provenance by
+  chunk id not zip; `fetch`=full text, bad id→`found:false`). SP_023:
+  `get_timeline`/`get_relationships`/`list_metrics`/`get_claims_by_predicate` (+`MetricVocab`; `get_links`
+  +`to_entity_id`=incoming). `get_claims_by_predicate` canonicalize-matches in the **db layer** (alias set
+  + period-strip `regexp_replace` `[[:space:]/-]+`; no POSIX `\b`, so `*` over-strips glued
+  `"fy2026 ebitda"`→`"ebitda"`). `get_timeline` reuses via `subject_id`; `source_as_of`=**claim** period.

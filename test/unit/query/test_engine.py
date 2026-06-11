@@ -15,6 +15,7 @@ from helixpay.contracts import (
     Document,
     Entity,
     Link,
+    MetricVocab,
     OrgNode,
     QueryEngine,
 )
@@ -428,3 +429,128 @@ def test_list_entities_filters_by_type_and_excludes_attributes(repo):
     assert "attributes" not in others[0]  # detail lives in get_entity (review L2)
     assert len(eng.list_entities(None)) == 3       # list-all
     assert eng.list_entities("nonexistent") == []  # unknown type → [], no raise
+
+
+# --------------------------------------------------------------------------- #
+# SP_023 graph/temporal surfaces                                              #
+# --------------------------------------------------------------------------- #
+def _hp(repo):
+    """A 'HelixPay' subject with a metric vocab where 'arr' canonicalizes to 'revenue'."""
+    hid = repo.add_entity(Entity(canonical_name="HelixPay", entity_type="other", seeded=True))
+    repo.add_metric(MetricVocab(canonical_key="revenue", display_name="Revenue",
+                                aliases=["arr", "annual recurring revenue"]))
+    return hid
+
+
+def test_get_timeline_orders_history_and_surfaces_supersession(repo):
+    hid = _hp(repo)
+    # Three coexisting/versioned revenue claims, deliberately added out of chronological order;
+    # one is stored under the ALIAS "arr" (must canonicalize onto "revenue").
+    repo.add_claim_row(
+        Claim(id=2, subject_entity_id=hid, predicate="revenue", object_value="$3.9M",
+              as_of=date(2026, 2, 1), superseded_by=3),
+        Citation(source_uri="data/dash.html", as_of=date(2026, 2, 2)),
+    )
+    repo.add_claim_row(
+        Claim(id=3, subject_entity_id=hid, predicate="arr", object_value="$4.4M",
+              as_of=date(2026, 3, 31)),
+        Citation(source_uri="data/board.pdf", as_of=date(2026, 4, 15)),
+    )
+    repo.add_claim_row(
+        Claim(id=1, subject_entity_id=hid, predicate="revenue", object_value="$3.5M",
+              as_of=date(2026, 1, 1)),
+        Citation(source_uri="data/jan.md", as_of=date(2026, 1, 5)),
+    )
+    tl = _engine(repo).get_timeline("HelixPay", "revenue")
+    assert tl["resolved"] is True and tl["entity"] == "HelixPay" and tl["predicate"] == "revenue"
+    # ascending by as_of; the alias-stored claim is included
+    assert [e["value"] for e in tl["timeline"]] == ["$3.5M", "$3.9M", "$4.4M"]
+    assert [e["as_of"] for e in tl["timeline"]] == ["2026-01-01", "2026-02-01", "2026-03-31"]
+    # supersession chain visible; each entry cited
+    mid = tl["timeline"][1]
+    assert mid["superseded_by"] == 3
+    assert mid["source_uri"] == "data/dash.html" and mid["source_as_of"] == "2026-02-02"
+
+
+def test_get_timeline_unresolved_entity_degrades_without_raising(repo):
+    _hp(repo)
+    tl = _engine(repo).get_timeline("Nobody Here", "revenue")
+    assert tl["resolved"] is False and tl["timeline"] == []
+    assert tl["predicate"] == "revenue"  # canonicalized label still returned, no raise
+
+
+def test_get_timeline_resolved_entity_with_no_matching_claims_is_empty(repo):
+    _hp(repo)  # HelixPay resolves, but has no 'runway' claims
+    repo.add_metric(MetricVocab(canonical_key="runway", display_name="Runway", aliases=[]))
+    tl = _engine(repo).get_timeline("HelixPay", "runway")
+    assert tl["resolved"] is True and tl["timeline"] == []  # resolved, just empty
+
+
+def test_get_relationships_returns_both_directions_with_names(repo):
+    maria = repo.add_entity(Entity(canonical_name="Maria Santos", entity_type="person"))
+    tan = repo.add_entity(Entity(canonical_name="Tan Wei", entity_type="person"))
+    bob = repo.add_entity(Entity(canonical_name="Bob Lee", entity_type="person"))
+    # Maria -> reports_to -> Tan (outgoing); Bob -> reports_to -> Maria (incoming to Maria)
+    repo.add_link_row(Link(id=1, from_entity_id=maria, to_entity_id=tan, link_type="reports_to",
+                           as_of=date(2026, 1, 1)),
+                      Citation(source_uri="data/org.md", as_of=date(2026, 1, 1)))
+    repo.add_link_row(Link(id=2, from_entity_id=bob, to_entity_id=maria, link_type="reports_to"))
+    rels = _engine(repo).get_relationships("Maria Santos")
+    assert rels["resolved"] is True
+    by_id = {r["link_id"]: r for r in rels["relationships"]}
+    assert by_id[1]["direction"] == "outgoing"
+    assert by_id[1]["from_name"] == "Maria Santos" and by_id[1]["to_name"] == "Tan Wei"
+    assert by_id[1]["source_uri"] == "data/org.md"
+    assert by_id[2]["direction"] == "incoming"
+    assert by_id[2]["from_name"] == "Bob Lee" and by_id[2]["to_name"] == "Maria Santos"
+    assert by_id[2]["source_uri"] is None  # absent-citation tolerated
+
+
+def test_get_relationships_filters_by_link_type_and_self_loop_is_outgoing(repo):
+    a = repo.add_entity(Entity(canonical_name="Acme", entity_type="customer"))
+    repo.add_link_row(Link(id=1, from_entity_id=a, to_entity_id=a, link_type="owns"))
+    repo.add_link_row(Link(id=2, from_entity_id=a, to_entity_id=a, link_type="mentions"))
+    rels = _engine(repo).get_relationships("Acme", link_type="owns")
+    assert [r["link_id"] for r in rels["relationships"]] == [1]  # link_type narrows
+    assert rels["relationships"][0]["direction"] == "outgoing"  # self-loop emitted once
+
+
+def test_get_relationships_unresolved_entity_degrades(repo):
+    out = _engine(repo).get_relationships("Ghost")
+    assert out["resolved"] is False and out["relationships"] == []
+
+
+def test_list_metrics_returns_vocab_and_empty_when_none(repo):
+    assert _engine(repo).list_metrics() == []
+    repo.add_metric(MetricVocab(canonical_key="revenue", display_name="Revenue", aliases=["arr"]))
+    repo.add_metric(MetricVocab(canonical_key="runway", display_name="Runway", aliases=[]))
+    out = _engine(repo).list_metrics()
+    assert [m["canonical_key"] for m in out] == ["revenue", "runway"]
+    assert out[0]["aliases"] == ["arr"] and out[0]["display_name"] == "Revenue"
+
+
+def test_get_claims_by_predicate_spans_subjects_and_canonicalizes_alias(repo):
+    repo.add_metric(MetricVocab(canonical_key="revenue", aliases=["arr"]))
+    sea = repo.add_entity(Entity(canonical_name="HelixPay SEA", entity_type="other"))
+    bra = repo.add_entity(Entity(canonical_name="HelixPay Brasil", entity_type="other"))
+    repo.add_claim_row(
+        Claim(id=1, subject_entity_id=sea, predicate="revenue", object_value="$9.4M",
+              as_of=date(2026, 3, 31)),
+        Citation(source_uri="data/sea.md", as_of=date(2026, 4, 1)),
+    )
+    repo.add_claim_row(  # stored under the alias — must still match "revenue"
+        Claim(id=2, subject_entity_id=bra, predicate="arr", object_value="$4.8M",
+              as_of=date(2026, 3, 31)),
+        Citation(source_uri="data/bra.md", as_of=date(2026, 4, 1)),
+    )
+    got = _engine(repo).get_claims_by_predicate("revenue")
+    assert got["predicate"] == "revenue" and got["count"] == 2
+    by_subj = {c["subject_name"]: c for c in got["claims"]}
+    assert by_subj["HelixPay SEA"]["value"] == "$9.4M"
+    assert by_subj["HelixPay Brasil"]["value"] == "$4.8M"  # alias-stored, found
+    assert by_subj["HelixPay SEA"]["source_uri"] == "data/sea.md"
+
+
+def test_get_claims_by_predicate_unknown_predicate_is_empty(repo):
+    got = _engine(repo).get_claims_by_predicate("headcount")
+    assert got["count"] == 0 and got["claims"] == []

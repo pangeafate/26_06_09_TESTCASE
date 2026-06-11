@@ -25,6 +25,7 @@ from .models import (
     EntityType,
     Link,
     LinkType,
+    MetricVocab,
     OrgNode,
     SourceType,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "Claim",
     "Link",
     "Contradiction",
+    "MetricVocab",
     "Citation",
     "AnswerBundle",
     "OrgNode",

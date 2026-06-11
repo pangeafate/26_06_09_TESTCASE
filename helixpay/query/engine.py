@@ -50,6 +50,13 @@ _SNIPPET_MAX = 200  # search-result snippet clip (fetch returns full text)
 _MISS_META = {"source_as_of": None, "document_id": None, "ordinal": None, "found": False}
 
 
+def _iso(d: Optional[date]) -> Optional[str]:
+    """``date`` → ISO string, ``None`` → ``None``. The single date guard for the retrieval/
+    graph surfaces — never a bare ``.isoformat()`` (claims/links/documents legitimately carry
+    ``as_of=None``)."""
+    return d.isoformat() if d is not None else None
+
+
 def _snippet(text: str) -> str:
     """Clip a chunk to a short ``search`` snippet. Defined HERE in the query layer so the
     engine never imports ``db.repository._truncate_snippet`` — that would make the
@@ -252,6 +259,145 @@ class HelixQueryEngine:
             }
             for e in self.repo.list_entities(entity_type)
         ]
+
+    # -- the ExposureEngine graph/temporal surface (SP_023) ------------- #
+    # Four more optional tools discovered by mcp.server._retrieval via getattr — pure DB reads
+    # ($0, no synthesis/embedding). They surface the ontology-shaped capabilities (temporal
+    # history, graph traversal, vocabulary, cross-entity comparison) the four frozen methods
+    # and the SP_022 retrieval primitives do not.
+    def get_timeline(self, entity: str, predicate: str) -> dict:
+        """Chronological claim history for ``entity``'s ``predicate`` — the supersession chain
+        and any coexisting conflicting values, each cited and ``as_of``-stamped (the ontology
+        versions facts, never overwrites). An ambiguous/unknown ``entity`` resolves to ``None``
+        (never a silent pick) → ``resolved: False``, empty timeline. Built on
+        ``get_claims_by_predicate(subject_id=…)`` so it shares the cross-entity tool's exact
+        matching (no per-claim N+1; the two tools always agree on 'predicate X'). NB:
+        ``source_as_of`` here is ``COALESCE(claim.as_of, doc.as_of)`` (the claim's reporting
+        period, via ``get_sources``) — deliberately NOT the pure document date SP_022's
+        ``search`` reports; a temporal view wants the fact's own period."""
+        subj = self.repo.resolve_entity(entity)
+        target = self.repo.canonical_predicate(predicate)
+        if subj is None or subj.id is None:
+            return {"entity": entity, "predicate": target, "resolved": False, "timeline": []}
+        claims = self.repo.get_claims_by_predicate(predicate, subject_id=subj.id)
+        cites = {c.claim_id: c for c in self.repo.get_sources([c.id for c in claims if c.id])}
+        ordered = sorted(
+            claims,
+            key=lambda c: (c.as_of or date.min, c.valid_from or date.min, c.id or 0),
+        )
+        timeline: list[dict] = []
+        for c in ordered:
+            cit = cites.get(c.id)
+            timeline.append(
+                {
+                    "claim_id": c.id,
+                    "predicate": target,
+                    "value": c.object_value,
+                    "as_of": _iso(c.as_of),
+                    "valid_from": _iso(c.valid_from),
+                    "valid_to": _iso(c.valid_to),
+                    "superseded_by": c.superseded_by,
+                    "confidence": c.confidence,
+                    "source_uri": cit.source_uri if cit else None,
+                    "source_as_of": _iso(cit.as_of) if cit else None,
+                    "snippet": cit.snippet if cit else None,
+                }
+            )
+        return {
+            "entity": subj.canonical_name,
+            "entity_id": subj.id,
+            "predicate": target,
+            "resolved": True,
+            "timeline": timeline,
+        }
+
+    def get_relationships(self, entity: str, link_type: Optional[str] = None) -> dict:
+        """An entity's relationships in **both** directions (beyond `get_org_chart`'s
+        reports_to): outgoing + incoming `owns`/`member_of`/`dotted_line_to`/`mentions`/
+        `reports_to`. Unresolved entity → ``resolved: False``. Endpoint names are resolved via
+        a `list_entities()` scan (corpus is small — avoids a get-entity-by-id seam)."""
+        subj = self.repo.resolve_entity(entity)
+        if subj is None or subj.id is None:
+            return {"entity": entity, "resolved": False, "relationships": []}
+        by_id: dict[int, tuple["Link", str]] = {}
+        for ln in self.repo.get_links(link_type, from_entity_id=subj.id):
+            if ln.id is not None:
+                by_id[ln.id] = (ln, "outgoing")
+        for ln in self.repo.get_links(link_type, to_entity_id=subj.id):
+            if ln.id is not None and ln.id not in by_id:  # self-loop stays "outgoing"
+                by_id[ln.id] = (ln, "incoming")
+        names = {e.id: e.canonical_name for e in self.repo.list_entities()}
+        cites = {c.link_id: c for c in self.repo.get_link_sources(list(by_id))}
+        rels: list[dict] = []
+        for lid, (ln, direction) in by_id.items():
+            cit = cites.get(lid)
+            rels.append(
+                {
+                    "link_id": lid,
+                    "link_type": ln.link_type,
+                    "direction": direction,
+                    "from_entity_id": ln.from_entity_id,
+                    "from_name": names.get(ln.from_entity_id),
+                    "to_entity_id": ln.to_entity_id,
+                    "to_name": names.get(ln.to_entity_id),
+                    "as_of": _iso(ln.as_of),
+                    "valid_to": _iso(ln.valid_to),
+                    "source_uri": cit.source_uri if cit else None,
+                    "source_as_of": _iso(cit.as_of) if cit else None,
+                    "snippet": cit.snippet if cit else None,
+                }
+            )
+        rels.sort(key=lambda r: (r["link_type"], r["link_id"]))
+        return {
+            "entity": subj.canonical_name,
+            "entity_id": subj.id,
+            "resolved": True,
+            "relationships": rels,
+        }
+
+    def list_metrics(self) -> list[dict]:
+        """The queryable metric vocabulary (canonical key + display name + aliases) — lets an
+        agent discover which predicates it can ask about. NB: distinct from
+        ``Repository.list_metrics`` (which returns ``MetricVocab[]``); this is the wire ``dict``."""
+        return [
+            {
+                "canonical_key": m.canonical_key,
+                "display_name": m.display_name,
+                "aliases": m.aliases,
+            }
+            for m in self.repo.list_metrics()
+        ]
+
+    def get_claims_by_predicate(self, predicate: str) -> dict:
+        """Every claim whose canonicalized predicate matches ``predicate``, across **all**
+        subjects — for 'compare revenue across regions/quarters'. Conflicting/superseded values
+        coexist (each carries `superseded_by`/`valid_to`); nothing is collapsed. The matched
+        canonical key is echoed as ``predicate``. NB: distinct from
+        ``Repository.get_claims_by_predicate`` (which returns raw ``Claim[]``); this is the
+        wire-shaped ``dict``. Per-claim provenance ``snippet`` is intentionally omitted for
+        compactness — use ``get_timeline`` for snippet-level provenance."""
+        target = self.repo.canonical_predicate(predicate)
+        claims = self.repo.get_claims_by_predicate(predicate)
+        names = {e.id: e.canonical_name for e in self.repo.list_entities()}
+        cites = {c.claim_id: c for c in self.repo.get_sources([c.id for c in claims if c.id])}
+        out: list[dict] = []
+        for c in claims:
+            cit = cites.get(c.id)
+            out.append(
+                {
+                    "claim_id": c.id,
+                    "subject_entity_id": c.subject_entity_id,
+                    "subject_name": names.get(c.subject_entity_id),
+                    "value": c.object_value,
+                    "as_of": _iso(c.as_of),
+                    "valid_to": _iso(c.valid_to),
+                    "superseded_by": c.superseded_by,
+                    "confidence": c.confidence,
+                    "source_uri": cit.source_uri if cit else None,
+                    "source_as_of": _iso(cit.as_of) if cit else None,
+                }
+            )
+        return {"predicate": target, "count": len(out), "claims": out}
 
     # -- internals ------------------------------------------------------ #
     @staticmethod

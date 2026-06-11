@@ -20,7 +20,9 @@ from helixpay.api.engine import MockQueryEngine, get_engine, set_engine
 from helixpay.mcp.server import build_mcp
 
 EXPECTED_TOOLS = {"ask", "get_entity", "get_org_chart", "find_contradictions",
-                  "get_sources", "search", "fetch", "list_entities"}
+                  "get_sources", "search", "fetch", "list_entities",
+                  "get_timeline", "get_relationships", "list_metrics",
+                  "get_claims_by_predicate"}
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +40,7 @@ def _text(result) -> str:
     return content[0].text
 
 
-def test_all_eight_tools_registered():
+def test_all_twelve_tools_registered():
     mcp = build_mcp()
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert EXPECTED_TOOLS <= names
@@ -75,6 +77,30 @@ def test_fetch_and_list_entities_retrieval_tools():
     assert all(e["entity_type"] == "other" for e in ents["results"])
 
 
+def test_graph_temporal_retrieval_tools():
+    mcp = build_mcp()
+    tl = json.loads(_text(asyncio.run(mcp.call_tool(
+        "get_timeline", {"entity": "HelixPay", "predicate": "revenue"}))))
+    assert tl["available"] is True and tl["results"]["resolved"] is True
+    # the planted Q1 conflict is visible as two coexisting timeline entries
+    assert len(tl["results"]["timeline"]) == 2
+
+    rel = json.loads(_text(asyncio.run(mcp.call_tool(
+        "get_relationships", {"entity": "Maria Santos"}))))
+    assert rel["available"] is True
+    dirs = {r["direction"] for r in rel["results"]["relationships"]}
+    assert {"outgoing", "incoming"} <= dirs  # both directions surfaced
+
+    mets = json.loads(_text(asyncio.run(mcp.call_tool("list_metrics", {}))))
+    assert mets["available"] is True
+    assert any(m["canonical_key"] == "revenue" for m in mets["results"])
+
+    cmp = json.loads(_text(asyncio.run(mcp.call_tool(
+        "get_claims_by_predicate", {"predicate": "ARR"}))))
+    assert cmp["available"] is True and cmp["results"]["count"] == 2
+    assert cmp["results"]["predicate"] == "revenue"  # canonicalized
+
+
 def test_retrieval_degrades_when_engine_lacks_surface():
     """A Protocol-only engine (no get_sources/search) must not break the tools."""
 
@@ -98,6 +124,10 @@ def test_retrieval_degrades_when_engine_lacks_surface():
         ("search", {"query": "x"}),
         ("fetch", {"id": "1"}),
         ("list_entities", {}),
+        ("get_timeline", {"entity": "X", "predicate": "revenue"}),
+        ("get_relationships", {"entity": "X"}),
+        ("list_metrics", {}),
+        ("get_claims_by_predicate", {"predicate": "revenue"}),
     ):
         payload = json.loads(_text(asyncio.run(mcp.call_tool(name, args))))
         assert payload["available"] is False and payload["results"] == []
