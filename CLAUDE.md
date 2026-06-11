@@ -327,13 +327,24 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   2026-04-21". The grader (`eval/run.py`) matches the value's reporting period — a baked-wrong
   as_of in the extraction cache can **only** be fixed by a re-record, never by post-processing
   (this is why the deterministic attribution fixes don't move golden recall at $0).
-- **A named account mentioned with two subject_types mints a duplicate (SP_010 final-mile):** an
+- **A named account mentioned with two subject_types mints a duplicate (SP_010 → SP_020):** an
   external account (e.g. `Açaí Express SP`) tagged both `customer` and `other` mints **two**
   unseeded rows → its bare name is ambiguous → an `owns`-link endpoint resolves to `None` and the
-  link is **dropped** at ingest (and the grader can't resolve it). Fix: seed the account as a
-  `customer` in `roster.py` `_ACCOUNTS` — the SP_019 seeded-snap then collapses every typing onto
-  the one seeded row. Same "seed-it-or-it-can't-resolve" pattern as `Project Confluence`/`CRM
-  migration`. Keep `_ACCOUNTS` to accounts with real ownership/escalation records (blast radius).
+  link is **dropped** at ingest. SP_010 worked around it by *seeding the account* (a per-account
+  hardcode); **SP_020 removed that hardcode and fixed the class at MINT time**: `resolve_mention`
+  snaps an open-class mention to an existing same-name row when **one side is the catch-all
+  `other`** (`_other_compatible`), so the duplicate is never created and the link resolves at
+  ingest — for *every* account, no seed. Guards: `resolve_entity` returns `None` on a 2+-row tie
+  (never snaps across an existing dup); two *specific* distinct types are never bridged; seeded
+  persons (two Marias) are non-creatable and never reach the snap. (Pre-existing cross-run dupes
+  in a long-lived DB are out of scope — that's the only case a post-ingest merge would add.)
+- **The replay/seed CLI from `eval/smoke/` uses the BAKED image code unless `PYTHONPATH=/app` is
+  set (SP_020):** with the host repo mounted at `/app`, `python -m helixpay.ingest.replay …` run
+  with CWD `/app/eval/smoke` imports the **installed** (baked) `helixpay`, NOT your edited
+  `/app/helixpay`, because `-m` puts the CWD (not `/app`) on `sys.path`. A resolution/pipeline
+  code change then silently does nothing on replay. Always pass `PYTHONPATH=/app` (and
+  `HELIXPAY_PROMPTS_DIR=/app/prompts` for prompt changes) on any host-mounted run from a subdir.
+  `run_seed` from `-w /app` is unaffected (CWD `/app` is already on the path).
 - **Adding a `METRIC_VOCAB` key silently widens `repair.KNOWN_KEYS` (SP_010 final-mile):**
   `repair.py` builds `KNOWN_KEYS` as *every* vocab key minus `_NON_COMPANY_KEYS`. A new key whose
   subject is NOT the company (e.g. `top_contributor`, a repo attribute) must be added to

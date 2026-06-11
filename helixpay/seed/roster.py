@@ -26,7 +26,6 @@ PERSON = "person"
 TEAM = "team"
 PRODUCT = "product"
 ORG = "other"
-CUSTOMER = "customer"
 
 _BULLET_RE = re.compile(
     r"^(?P<indent>\s*)-\s+\*\*(?P<name>[^*]+?)\*\*\s*[—-]\s*(?P<rest>.+)$"
@@ -252,21 +251,13 @@ _PRODUCTS = [
     ),
     ("HelixPay Tap", ["Tap"]),
 ]
-# Named merchant accounts that carry cross-document ownership / escalation records (SP_010
-# final-mile). Seeded as `customer` so each resolves to ONE row: an account mentioned with
-# inconsistent subject_types (e.g. Açaí Express SP appears typed both `customer` and `other`)
-# otherwise mints two unseeded rows, which makes its bare name ambiguous — the owns-link
-# endpoint resolves to None and the link is dropped. This is the same seed-it-or-it-can't-
-# resolve pattern as the cross-doc project entities above; a real deployment seeds its
-# account roster the same way. Accent-folded aliases let a folded mention reach the
-# accented canonical. Keep this to accounts with genuine ownership/escalation records, not
-# every prospect named in sales chatter (blast radius).
-_ACCOUNTS = [
-    # Only the accent-folded full form is aliased; a folded mention ("Acai Express SP") then
-    # reaches the accented canonical. The no-"SP" short form is deliberately omitted — it is not
-    # a graded surface form and its folded variant would not match this alias (Stage-3 MEDIUM-2).
-    ("Açaí Express SP", ["Acai Express SP"]),
-]
+# Named merchant accounts are NOT seeded (SP_020). An account mentioned with inconsistent
+# subject_types (e.g. Açaí Express SP appears typed both `customer` and `other`) used to mint
+# two unseeded rows → ambiguous bare name → its owns-link was dropped, which the SP_010
+# final-mile worked around by hardcoding the account here. That hardcode is removed: the
+# duplicate is now prevented at MINT time in `resolve.resolve_mention` (an open-class mention
+# snaps to an existing same-name row when one side is the catch-all `other`), so the class of
+# bug is fixed for every account without a per-account seed.
 
 
 def parse_overview(_text: str | None = None) -> OverviewParse:
@@ -310,15 +301,6 @@ def parse_overview(_text: str | None = None) -> OverviewParse:
         )
         for a in palias:
             parse.aliases.append((pname, a))
-    for aname, aaliases in _ACCOUNTS:
-        parse.entities[aname] = Entity(
-            canonical_name=aname,
-            entity_type=CUSTOMER,
-            attributes={"kind": "merchant_account"},
-            seeded=True,
-        )
-        for a in aaliases:
-            parse.aliases.append((aname, a))
     return parse
 
 
@@ -332,5 +314,4 @@ __all__ = [
     "TEAM",
     "PRODUCT",
     "ORG",
-    "CUSTOMER",
 ]

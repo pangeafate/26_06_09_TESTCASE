@@ -106,19 +106,25 @@ def resolve_mention(
         return None
 
     if entity_type in allow_create_types:
-        # Layer 2 (SP_019): seeded-roster snap BEFORE minting. A typed resolve missing does NOT
-        # mean the mention is new — a company/entity name mis-typed (e.g. "HelixPay" tagged
-        # ``metric``) misses the type filter and would mint a duplicate. Try a TYPE-AGNOSTIC
-        # resolve and snap to an existing **seeded** roster row instead. Snap only to a seeded
-        # entity (never another minted row) and only when the resolve is unambiguous —
-        # ``resolve_entity`` returns ``None`` for the two-Marias / two-Tans bare-name trap, so
-        # the snap can never bridge two distinct seeded entities. Running it only on the mint
-        # path (not for a non-creatable person/team miss, which is dropped) avoids a second DB
-        # round-trip and any cross-type bridge. (iText2KG / ReLiK pattern.)
-        # Invariant assumed: no two seeded entities share a canonical name across types.
+        # Snap BEFORE minting instead of creating a duplicate. A typed resolve missing does NOT
+        # mean the mention is new — the same entity is often mentioned under a different type. A
+        # TYPE-AGNOSTIC ``resolve_entity`` returns exactly one row only when unambiguous
+        # (seeded-first + context) and ``None`` on a 2+-row tie — so the snap can never bridge
+        # two distinct seeded entities (the two-Marias / two-Tans trap; persons/teams are also
+        # non-creatable and never reach here) nor fire across an existing duplicate.
+        # Two cases snap (iText2KG / ReLiK "match-before-mint" pattern):
+        #   * SP_019: the hit is **seeded** — a name mis-typed ``metric`` snaps to seeded
+        #     ``other|HelixPay`` instead of minting ``metric|HelixPay``.
+        #   * SP_020 (mint-time dedup): the hit is an unseeded open-class row and **one side is
+        #     the catch-all ``other``** (the extractor's "type unknown" bucket) — e.g. a
+        #     ``customer|Açaí`` and an ``other|Açaí`` collapse to one row, so the bare name stays
+        #     unambiguous and its ``owns`` link resolves at ingest. Two *specific* distinct types
+        #     are left distinct (only ``other`` is treated as compatible).
         for variant in variants:
             ent = repo.resolve_entity(variant, None, context)
-            if ent is not None and ent.id is not None and ent.seeded:
+            if ent is None or ent.id is None:
+                continue
+            if ent.seeded or _other_compatible(entity_type, ent.entity_type):
                 return ent.id
         new_id = repo.upsert_entity(Entity(canonical_name=name, entity_type=entity_type, seeded=False))
         log.info("created new entity", extra={"name": name, "entity_type": entity_type, "created": True})
@@ -129,6 +135,13 @@ def resolve_mention(
         extra={"name": name, "entity_type": entity_type, "had_context": bool(context)},
     )
     return None
+
+
+def _other_compatible(incoming_type: Optional[str], existing_type: str) -> bool:
+    """Two open-class types are dedup-compatible when one side is the catch-all ``other`` (the
+    extractor's "type unknown" bucket). Two *specific* distinct types are never merged — a
+    ``customer`` named like a ``product`` is not assumed to be the same entity (SP_020)."""
+    return "other" in (incoming_type, existing_type)
 
 
 def _dedup(items: list[str]) -> list[str]:

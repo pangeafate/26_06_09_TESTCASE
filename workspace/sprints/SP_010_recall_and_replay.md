@@ -5,7 +5,7 @@ features: [replay-tier, recall-company-entity, recall-metric-vocab, recall-norma
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_010-recall-replay
 worktree: ""

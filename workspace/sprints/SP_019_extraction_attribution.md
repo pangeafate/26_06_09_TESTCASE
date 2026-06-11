@@ -5,7 +5,7 @@ features: [metric-subject-repair, roster-snap-resolution, attribution-prompt-sur
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_019-extraction-attribution
 worktree: ""

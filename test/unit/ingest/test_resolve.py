@@ -184,10 +184,61 @@ def test_genuinely_new_open_class_mention_still_mints():
     repo = FakeRepo()
     repo.seed("HelixPay", "other")
     before = len(repo.entities)
-    # a real new customer with no seeded match still mints (snap only fires on a seeded hit).
+    # snap fires on a seeded hit (SP_019) or an unseeded other-compatible hit (SP_020); "Brand
+    # New Co" has no existing row of any type, so neither fires and it mints.
     cid = resolve_mention(repo, "Brand New Co", entity_type="customer")
     assert cid is not None and len(repo.entities) == before + 1
     assert repo.entities[-1].seeded is False
+
+
+def test_mint_time_dedup_does_not_snap_across_a_preexisting_ambiguous_pair():
+    # SP_020 boundary: if two same-name SPECIFIC-type rows already coexist (a pre-existing dup),
+    # the type-agnostic snap resolve returns None on the tie, so an incoming `other|X` does NOT
+    # silently pick one — it mints (the snap never bridges across an existing ambiguity).
+    repo = FakeRepo()
+    cust = resolve_mention(repo, "Orbit", entity_type="customer")  # mints customer|Orbit
+    prod = resolve_mention(repo, "Orbit", entity_type="product")   # mints product|Orbit (no other)
+    assert prod is not None and prod != cust
+    before = len(repo.entities)
+    other = resolve_mention(repo, "Orbit", entity_type="other")    # 2-row tie → no snap → mints
+    assert other is not None and other not in (cust, prod)
+    assert len(repo.entities) == before + 1
+
+
+def test_mint_time_dedup_collapses_dual_typed_open_class_mention():
+    # SP_020: an UNSEEDED account mentioned as both `customer` and `other` must snap to the one
+    # existing row at MINT time (one side is the catch-all `other`), never minting a duplicate.
+    # This is what makes the bare name unambiguous so its `owns` link resolves at ingest — with
+    # NO hardcoded seed.
+    repo = FakeRepo()  # empty roster — nothing seeded
+    first = resolve_mention(repo, "Açaí Express SP", entity_type="customer")  # mints customer|Açaí
+    assert first is not None
+    before = len(repo.entities)
+    second = resolve_mention(repo, "Açaí Express SP", entity_type="other")  # must snap, not mint
+    assert second == first
+    assert len(repo.entities) == before  # zero duplicates minted
+    # and the bare name now resolves unambiguously (the link-endpoint / grader path):
+    assert resolve_mention(repo, "Açaí Express SP") == first
+
+
+def test_mint_time_dedup_works_regardless_of_mention_order():
+    # the `other` mention may come first — the later `customer` mention snaps back to it.
+    repo = FakeRepo()
+    first = resolve_mention(repo, "Açaí Express SP", entity_type="other")
+    before = len(repo.entities)
+    second = resolve_mention(repo, "Açaí Express SP", entity_type="customer")
+    assert second == first and len(repo.entities) == before
+
+
+def test_mint_time_dedup_does_not_bridge_two_specific_types():
+    # conservative guard: when NEITHER side is `other`, two same-name specific types stay
+    # distinct (a customer named like a product is not assumed to be the same thing).
+    repo = FakeRepo()
+    cust = resolve_mention(repo, "Orbit", entity_type="customer")
+    before = len(repo.entities)
+    prod = resolve_mention(repo, "Orbit", entity_type="product")
+    assert prod is not None and prod != cust
+    assert len(repo.entities) == before + 1  # a distinct row, NOT bridged
 
 
 def test_seeded_account_collapses_dual_typed_mentions_to_one_row():
