@@ -20,7 +20,7 @@ from helixpay.api.engine import MockQueryEngine, get_engine, set_engine
 from helixpay.mcp.server import build_mcp
 
 EXPECTED_TOOLS = {"ask", "get_entity", "get_org_chart", "find_contradictions",
-                  "get_sources", "search"}
+                  "get_sources", "search", "fetch", "list_entities"}
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,7 @@ def _text(result) -> str:
     return content[0].text
 
 
-def test_all_six_tools_registered():
+def test_all_eight_tools_registered():
     mcp = build_mcp()
     names = {t.name for t in asyncio.run(mcp.list_tools())}
     assert EXPECTED_TOOLS <= names
@@ -58,6 +58,21 @@ def test_get_sources_and_search_retrieval_tools():
     assert sources["available"] is True and sources["results"]
     found = json.loads(_text(asyncio.run(mcp.call_tool("search", {"query": "revenue", "k": 1}))))
     assert found["available"] is True and len(found["results"]) == 1
+    # mock now emits the SAME key shape as the real engine (review H3 — no shape drift)
+    hit = found["results"][0]
+    assert {"id", "title", "url", "snippet", "score", "source_as_of"} <= set(hit)
+
+
+def test_fetch_and_list_entities_retrieval_tools():
+    mcp = build_mcp()
+    fetched = json.loads(_text(asyncio.run(mcp.call_tool("fetch", {"id": "11"}))))
+    assert fetched["available"] is True
+    rec = fetched["results"]
+    assert rec["id"] == "11" and rec["text"] and rec["url"]
+    assert rec["metadata"]["found"] is True
+    ents = json.loads(_text(asyncio.run(mcp.call_tool("list_entities", {"entity_type": "other"}))))
+    assert ents["available"] is True
+    assert all(e["entity_type"] == "other" for e in ents["results"])
 
 
 def test_retrieval_degrades_when_engine_lacks_surface():
@@ -78,8 +93,14 @@ def test_retrieval_degrades_when_engine_lacks_surface():
 
     set_engine(CoreOnly())
     mcp = build_mcp()
-    sources = json.loads(_text(asyncio.run(mcp.call_tool("get_sources", {}))))
-    assert sources["available"] is False and sources["results"] == []
+    for name, args in (
+        ("get_sources", {}),
+        ("search", {"query": "x"}),
+        ("fetch", {"id": "1"}),
+        ("list_entities", {}),
+    ):
+        payload = json.loads(_text(asyncio.run(mcp.call_tool(name, args))))
+        assert payload["available"] is False and payload["results"] == []
 
 
 def _post_mcp(client: TestClient, body: dict):

@@ -27,7 +27,8 @@ docker compose run --rm app helixpay ask "Who is the Head of Engineering and whe
 # or hit the agent surfaces:
 #   REST:  POST http://127.0.0.1:8000/ask   {"question": "..."}
 #   MCP:   streamable-HTTP at /mcp  (tools: ask, get_entity, get_org_chart,
-#                                    find_contradictions, get_sources, search)
+#                                    find_contradictions, get_sources, search,
+#                                    fetch, list_entities)
 ```
 
 Secrets are read **only** from the environment via `helixpay.config`

@@ -6,12 +6,13 @@ this server is built for streamable-HTTP and mounted into the shared ASGI app at
 ``QueryEngine`` (``helixpay.api.engine.get_engine``) — no business logic, no DB access.
 
 Tools, typed per object type:
-  ask · get_entity · get_org_chart · find_contradictions · get_sources · search
+  ask · get_entity · get_org_chart · find_contradictions
+  get_sources · search · fetch · list_entities
 
-The four core tools are guaranteed by the frozen ``QueryEngine`` Protocol. ``get_sources``
-and ``search`` are retrieval surfaces (``ExposureEngine`` extension); they dispatch through
-``_retrieval`` and degrade to a structured "unavailable" payload if the injected engine
-does not implement them.
+The four core tools are guaranteed by the frozen ``QueryEngine`` Protocol. ``get_sources``,
+``search``, ``fetch`` and ``list_entities`` are retrieval surfaces (``ExposureEngine``
+extension); they dispatch through ``_retrieval`` and degrade to a structured "unavailable"
+payload if the injected engine does not implement them.
 """
 
 from __future__ import annotations
@@ -47,8 +48,11 @@ def _transport_security() -> TransportSecuritySettings:
 
 
 def _retrieval(method: str, *args: Any, **kwargs: Any) -> dict:
-    """Guarded dispatch for the optional retrieval surfaces. Keeps the two extra tools
-    callable against any engine without breaking when the Protocol-only surface is wired."""
+    """Guarded dispatch for the optional retrieval surfaces. Keeps the extra tools callable
+    against any engine without breaking when the Protocol-only surface is wired. ``results``
+    carries whatever the surface returns: a *list* for ``search`` / ``get_sources`` /
+    ``list_entities`` (a scan), or a single *record dict* for ``fetch`` (a by-id lookup).
+    The degraded ("unavailable") payload always uses ``results: []``."""
     engine = get_engine()
     fn = getattr(engine, method, None)
     if not callable(fn):
@@ -61,7 +65,7 @@ def _retrieval(method: str, *args: Any, **kwargs: Any) -> dict:
 
 
 def build_mcp(name: str = "helixpay") -> FastMCP:
-    """Construct the FastMCP server with all six tools registered. Returned so the ASGI
+    """Construct the FastMCP server with all eight tools registered. Returned so the ASGI
     app can mount ``.streamable_http_app()`` and tests can introspect tools directly."""
     mcp = FastMCP(
         name,
@@ -103,8 +107,23 @@ def build_mcp(name: str = "helixpay") -> FastMCP:
 
     @mcp.tool()
     def search(query: str, k: int = 10) -> dict:
-        """Raw hybrid retrieval over chunks (no synthesis)."""
+        """Raw hybrid retrieval over chunks (no synthesis). Each hit carries id/title/url/
+        snippet/score and the source document's ``source_as_of``. Pair an id with ``fetch``
+        for the full text."""
         return _retrieval("search", query, k=k)
+
+    @mcp.tool()
+    def fetch(id: str) -> dict:
+        """Fetch the full text + provenance of a single chunk by id (an id from ``search``).
+        An unknown/malformed id returns a ``found: false`` record, never an error."""
+        return _retrieval("fetch", id)
+
+    @mcp.tool()
+    def list_entities(entity_type: Optional[str] = None) -> dict:
+        """Enumerate ontology entities, optionally by type (person/team/customer/product/
+        metric/other). Use for corpus-wide 'what X are covered' questions — e.g.
+        ``entity_type='other'`` lists regions/org-units (HelixPay Brasil, SEA, …)."""
+        return _retrieval("list_entities", entity_type)
 
     return mcp
 

@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-10
+last-reconciled: 2026-06-11
 authoritative-for: [phases, milestones]
 ---
 

@@ -384,3 +384,11 @@ find workspace/sprints -name 'SP_*.md' -exec sh -c \
   *before* this change must be **re-seeded fresh** (or have its stamped reporting rows
   dropped) — changing the `as_of` changes the natural key, so a re-seed *adds* an undated
   twin instead of being a no-op. Fresh `make up && seed` is unaffected.
+- **MCP retrieval tools live on `ExposureEngine`, NOT frozen `QueryEngine` (SP_022):** 8 tools = 4
+  frozen + 4 optional (`search`/`fetch`/`get_sources`/`list_entities`) on `ExposureEngine`+
+  `HelixQueryEngine`, found by `_retrieval` `getattr` (`QueryEngine`-only engine → `{available:false}`).
+  Their `Repository` reads (`get_chunk`/`list_documents`/`list_entities`) are additive pure-read
+  extensions (SP_009 precedent). Traps: `search`'s `source_as_of` is the **document** date (not a fact's
+  reporting period); it joins provenance **by chunk id** not zip (`get_chunk_sources` is `ORDER BY
+  chunk_id` + drops missing-doc joins); `_snippet` is query-layer (never import db's). `fetch` = full
+  text, bad id → `found:false`.

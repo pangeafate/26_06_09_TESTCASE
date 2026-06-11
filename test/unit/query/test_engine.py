@@ -12,11 +12,13 @@ from helixpay.contracts import (
     Citation,
     Claim,
     Contradiction,
+    Document,
     Entity,
     Link,
     OrgNode,
     QueryEngine,
 )
+from helixpay.api.engine import ExposureEngine
 from helixpay.query import HelixQueryEngine
 from helixpay.query.clients import Embedder, Synthesizer
 
@@ -324,3 +326,102 @@ def test_gather_links_surfaces_link_contradiction_side_on_other_entity(repo):
                         kind="source_disagreement")
     links = _engine(repo)._gather_links([bob], [con])
     assert {ln.id for ln in links} == {5, 6}   # both sides surfaced despite link 6 off entity 7
+
+
+# -- SP_022: MCP retrieval surfaces (search / fetch / get_sources / list_entities) -- #
+def test_engine_satisfies_exposure_engine_protocol(repo):
+    engine: ExposureEngine = _engine(repo)  # typed assignment: mypy conformance too
+    assert isinstance(engine, ExposureEngine)
+
+
+def test_search_preserves_rrf_rank_and_realigns_provenance_by_chunk_id(repo):
+    # Two hits whose RRF rank order is the OPPOSITE of chunk-id order, so a naive zip of
+    # hybrid_search output against get_chunk_sources (which returns ORDER BY chunk id) would
+    # mis-assign provenance. Chunk 30 outranks chunk 10; provenance must follow the id.
+    top = Chunk(id=30, document_id=7, ordinal=0, text="alpha series B closed")
+    low = Chunk(id=10, document_id=3, ordinal=0, text="bravo runway update")
+    repo.semantic = [(top, 0.9), (low, 0.5)]
+    repo.lexical = [(top, 0.8), (low, 0.4)]
+    repo.add_chunk_source(30, Citation(source_uri="data/a.md", as_of=date(2026, 3, 31)))
+    # chunk 10 has NO citation → fallback path
+    results = _engine(repo).search("series B", k=8)
+    assert [r["id"] for r in results] == ["30", "10"]  # RRF rank order, NOT id order
+    assert results[0]["score"] >= results[1]["score"]
+    assert results[0]["url"] == "data/a.md"
+    assert results[0]["source_as_of"] == "2026-03-31"  # the DOCUMENT date, guarded iso
+    assert results[0]["document_id"] == 7
+    # no-citation hit falls back cleanly (review H1) — never a None.isoformat crash
+    assert results[1]["url"] == "" and results[1]["title"] == ""
+    assert results[1]["source_as_of"] is None
+
+
+def test_search_caps_at_k_and_skips_idless_chunks(repo):
+    # k truncation is upstream in hybrid_search (fused[:k]); confirm end-to-end. Also a
+    # chunk with no id must never surface as the literal string "None" (review H1).
+    a = Chunk(id=2, document_id=1, ordinal=0, text="alpha")
+    b = Chunk(id=1, document_id=1, ordinal=1, text="bravo")
+    idless = Chunk(id=None, document_id=1, ordinal=2, text="ghost")
+    repo.semantic = [(a, 0.9), (b, 0.5), (idless, 0.4)]
+    results = _engine(repo).search("x", k=2)
+    assert len(results) <= 2
+    assert all(r["id"] != "None" for r in results)  # no id=None chunk leaks through
+
+
+def test_search_snippet_is_truncated_while_fetch_returns_full_text(repo):
+    long_text = "x" * 600
+    chunk = Chunk(id=42, document_id=1, ordinal=0, text=long_text)
+    repo.semantic = [(chunk, 0.9)]
+    repo.add_chunk_row(chunk)
+    repo.add_chunk_source(42, Citation(source_uri="data/big.md", as_of=date(2026, 1, 1)))
+    eng = _engine(repo)
+    snippet = eng.search("x", k=1)[0]["snippet"]
+    assert len(snippet) < len(long_text) and snippet.endswith("…")
+    fetched = eng.fetch("42")
+    assert fetched["text"] == long_text  # full, untruncated
+    assert len(fetched["text"]) > len(snippet)
+
+
+def test_fetch_returns_provenance_metadata(repo):
+    chunk = Chunk(id=5, document_id=9, ordinal=2, text="HelixPay closed Series B.")
+    repo.add_chunk_row(chunk)
+    repo.add_chunk_source(5, Citation(source_uri="data/news.md", as_of=date(2026, 2, 1)))
+    got = _engine(repo).fetch("5")
+    assert got["id"] == "5" and got["text"] == "HelixPay closed Series B."
+    assert got["url"] == "data/news.md"
+    assert got["metadata"]["found"] is True
+    assert got["metadata"]["source_as_of"] == "2026-02-01"
+    assert got["metadata"]["document_id"] == 9 and got["metadata"]["ordinal"] == 2
+
+
+def test_fetch_unknown_and_malformed_ids_degrade_without_raising(repo):
+    eng = _engine(repo)
+    for bad in ("999", "abc", "", "3.5"):  # valid-but-absent + non-int — none may raise
+        got = eng.fetch(bad)
+        assert got["metadata"]["found"] is False
+        assert got["text"] == "" and got["url"] == ""
+
+
+def test_get_sources_lists_inventory_and_tolerates_null_as_of(repo):
+    repo.add_document(Document(id=1, source_uri="data/q1.html", source_type="html",
+                              title="Q1 Dashboard", as_of=date(2026, 3, 31),
+                              content_hash="h1", raw_text="big body"))
+    repo.add_document(Document(id=2, source_uri="data/notes.md", source_type="md",
+                              title=None, as_of=None, content_hash="h2"))
+    out = _engine(repo).get_sources()
+    by_uri = {d["source_uri"]: d for d in out}
+    assert by_uri["data/q1.html"]["as_of"] == "2026-03-31"
+    assert by_uri["data/notes.md"]["as_of"] is None  # null-date doc, no crash (review H2)
+    assert "raw_text" not in by_uri["data/q1.html"]  # projected away at the wire boundary
+
+
+def test_list_entities_filters_by_type_and_excludes_attributes(repo):
+    repo.add_entity(Entity(canonical_name="HelixPay Brasil", entity_type="other",
+                           attributes={"region": "BR"}))
+    repo.add_entity(Entity(canonical_name="HelixPay SEA", entity_type="other"))
+    repo.add_entity(Entity(canonical_name="Wei Chen", entity_type="person"))
+    eng = _engine(repo)
+    others = eng.list_entities("other")
+    assert [e["canonical_name"] for e in others] == ["HelixPay Brasil", "HelixPay SEA"]
+    assert "attributes" not in others[0]  # detail lives in get_entity (review L2)
+    assert len(eng.list_entities(None)) == 3       # list-all
+    assert eng.list_entities("nonexistent") == []  # unknown type → [], no raise

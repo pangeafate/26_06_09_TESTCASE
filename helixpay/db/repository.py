@@ -88,6 +88,10 @@ def _chunk_from_row(row: dict[str, Any]) -> Chunk:
     return Chunk(id=row["id"], document_id=row.get("document_id"), ordinal=row.get("ordinal", 0), text=row["text"])
 
 
+def _document_from_row(row: dict[str, Any]) -> Document:
+    return Document.model_validate({k: row.get(k) for k in Document.model_fields})
+
+
 _SNIPPET_MAX = 200
 
 
@@ -659,6 +663,49 @@ class PostgresRepository:
                 )
                 for r in cur.fetchall()
             ]
+
+    # ------------------------------------------------------------------ #
+    # retrieval reads for the MCP tool surface (SP_022)
+    # ------------------------------------------------------------------ #
+    def get_chunk(self, chunk_id: int) -> Optional[Chunk]:
+        """A single chunk by id with its FULL text (backs MCP ``fetch``). ``None`` on
+        miss. Unlike ``get_chunk_sources`` the text is NOT truncated."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, document_id, ordinal, text FROM chunks WHERE id = %s",
+                (chunk_id,),
+            )
+            row = cur.fetchone()
+        return _chunk_from_row(row) if row is not None else None
+
+    def list_documents(self) -> list[Document]:
+        """Full document inventory (backs MCP ``get_sources``), ordered ``as_of`` DESC
+        NULLS LAST then ``id`` ASC. Returns complete ``Document`` models including
+        ``raw_text`` — payload trimming is the engine/wire layer's job (SP_022)."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, source_uri, source_type, title, author, lang, as_of,
+                       ingested_at, content_hash, raw_text
+                FROM documents
+                ORDER BY as_of DESC NULLS LAST, id ASC
+                """
+            )
+            return [_document_from_row(r) for r in cur.fetchall()]
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[Entity]:
+        """Enumerate entities (backs MCP ``list_entities``), optionally by type. An
+        unknown/empty type returns ``[]`` (never raises — mirrors ``canonical_predicate``'s
+        never-raise convention). Ordered by ``entity_type`` then ``canonical_name``."""
+        sql = "SELECT id, canonical_name, entity_type, attributes, seeded FROM entities"
+        params: list[Any] = []
+        if entity_type is not None:
+            sql += " WHERE entity_type = %s"
+            params.append(entity_type)
+        sql += " ORDER BY entity_type ASC, canonical_name ASC"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [_entity_from_row(r) for r in cur.fetchall()]
 
     def known_content_hashes(self) -> set[str]:
         """Every ``documents.content_hash`` already stored (compute-idempotency)."""

@@ -133,6 +133,25 @@ class Repository(Protocol):
         ``snippet`` — no claim join, so ``claim_id`` is always ``None``."""
         ...
 
+    # -- retrieval reads for the MCP tool surface (SP_022) ----------------- #
+    def get_chunk(self, chunk_id: int) -> Optional[Chunk]:
+        """A single chunk by id with its **full, untruncated** text (backs the MCP
+        ``fetch`` tool). ``None`` when the id does not exist. Distinct from
+        ``get_chunk_sources``, which truncates the text into a citation snippet."""
+        ...
+
+    def list_documents(self) -> list[Document]:
+        """The full document inventory (backs the MCP ``get_sources`` tool), ordered
+        ``as_of`` DESC NULLS LAST, ``id`` ASC. Returns complete ``Document`` models
+        (``raw_text`` included); wire-payload trimming is the caller's concern."""
+        ...
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[Entity]:
+        """Enumerate entities (backs the MCP ``list_entities`` tool), optionally
+        filtered to one ``entity_type``. Unknown/empty type → ``[]`` (never raises),
+        ordered by ``entity_type`` then ``canonical_name``."""
+        ...
+
     def known_content_hashes(self) -> set[str]:
         """Every ``documents.content_hash`` already stored. Lets ingestion skip
         re-embedding unchanged sources (compute-idempotency: re-ingest → near-free)."""

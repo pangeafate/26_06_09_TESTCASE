@@ -16,6 +16,7 @@ from helixpay.contracts import (
     Citation,
     Claim,
     Contradiction,
+    Document,
     Entity,
     Link,
     OrgNode,
@@ -40,8 +41,22 @@ class FakeRepository:
             entity_id=0, name="", children=[], dotted_reports=[]
         )
         self.vocab: dict[str, str] = {}  # lowercased alias -> canonical key
+        self.documents: dict[int, Document] = {}  # SP_022: document inventory
+        self.chunks: dict[int, Chunk] = {}  # SP_022: chunk-by-id (fetch)
 
     # -- helpers used by tests ------------------------------------------- #
+    def add_document(self, doc: Document) -> int:
+        did = doc.id or (max(self.documents) + 1 if self.documents else 1)
+        doc.id = did
+        self.documents[did] = doc
+        return did
+
+    def add_chunk_row(self, chunk: Chunk) -> int:
+        cid = chunk.id or (max(self.chunks) + 1 if self.chunks else 1)
+        chunk.id = cid
+        self.chunks[cid] = chunk
+        return cid
+
     def add_entity(self, e: Entity) -> int:
         eid = e.id or (max(self.entities) + 1 if self.entities else 1)
         e.id = eid
@@ -127,6 +142,29 @@ class FakeRepository:
         return [
             self.link_citations[lid] for lid in link_ids if lid in self.link_citations
         ]
+
+    # -- SP_022 retrieval reads ------------------------------------------ #
+    def get_chunk(self, chunk_id: int) -> Optional[Chunk]:
+        return self.chunks.get(chunk_id)
+
+    def list_documents(self) -> list[Document]:
+        # as_of DESC NULLS LAST, id ASC (mirror PostgresRepository.list_documents)
+        return sorted(
+            self.documents.values(),
+            key=lambda d: (
+                d.as_of is None,
+                -(d.as_of.toordinal() if d.as_of else 0),
+                d.id or 0,
+            ),
+        )
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[Entity]:
+        out = [
+            e
+            for e in self.entities.values()
+            if entity_type is None or e.entity_type == entity_type
+        ]
+        return sorted(out, key=lambda e: (e.entity_type, e.canonical_name))
 
     def resolve_entity(
         self,

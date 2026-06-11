@@ -42,6 +42,15 @@ _MAX_SUBJECTS = 6
 _MAX_TERMS = 40  # cap repo lookups on a long question (perf guard)
 _MAX_LINKS = 12  # cap relationship facts pulled into grounding (perf/noise guard)
 _MAX_CLAIM_FACTS = 50  # cap claims fed to grounding/consensus (perf/noise guard)
+_SNIPPET_MAX = 200  # search-result snippet clip (fetch returns full text)
+
+
+def _snippet(text: str) -> str:
+    """Clip a chunk to a short ``search`` snippet. Defined HERE in the query layer so the
+    engine never imports ``db.repository._truncate_snippet`` — that would make the
+    query/capabilities layer depend on the db/infrastructure layer (SP_022 review:
+    layer-boundary). ``fetch`` returns the full, untruncated text instead."""
+    return text[:_SNIPPET_MAX] + "…" if len(text) > _SNIPPET_MAX else text
 
 
 class HelixQueryEngine:
@@ -146,6 +155,98 @@ class HelixQueryEngine:
 
     def find_contradictions(self, topic: Optional[str] = None) -> list[Contradiction]:
         return contra.find(self.repo, topic)
+
+    # -- the ExposureEngine retrieval surface (SP_022) ------------------ #
+    # Optional tools discovered by mcp.server._retrieval via getattr — NOT on the frozen
+    # QueryEngine Protocol. They return plain JSON-friendly dicts (no model leakage).
+    def search(self, query: str, k: int = 10) -> list[dict]:
+        """Raw hybrid retrieval over chunks (no synthesis). Results stay in RRF rank order;
+        provenance is re-aligned to each chunk BY ID (``get_chunk_sources`` returns rows in
+        chunk-id order and omits chunks with a missing document join), never by zip. The
+        date is the *document's* ``as_of`` (``source_as_of``) — not a per-fact reporting
+        period (CLAUDE.md's as_of trap)."""
+        hits = retrieval.hybrid_search(self.repo, self.embedder, query, k=k)
+        cites = {
+            c.chunk_id: c
+            for c in self.repo.get_chunk_sources(
+                [ch.id for ch, _ in hits if ch.id is not None]
+            )
+        }
+        out: list[dict] = []
+        for chunk, score in hits:
+            if chunk.id is None:
+                continue  # no addressable id → can't be fetched; never emit "None"
+            c = cites.get(chunk.id)
+            uri = c.source_uri if c else ""
+            out.append(
+                {
+                    "id": str(chunk.id),
+                    "title": uri,
+                    "url": uri,
+                    "snippet": _snippet(chunk.text),
+                    "score": score,
+                    "source_as_of": c.as_of.isoformat() if (c and c.as_of) else None,
+                    "document_id": chunk.document_id,
+                }
+            )
+        return out
+
+    def fetch(self, id: str) -> dict:
+        """Full text + provenance of a single chunk by id (the handle ``search`` minted).
+        A malformed (non-int) or absent id degrades to a ``found: False`` payload — never a
+        raise that 500s the tool (deliberate divergence from ``get_org_chart``: the id is an
+        opaque search handle, not user-semantic input)."""
+        try:
+            cid = int(id)
+        except (TypeError, ValueError):
+            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+        chunk = self.repo.get_chunk(cid)
+        if chunk is None:
+            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+        cites = {c.chunk_id: c for c in self.repo.get_chunk_sources([cid])}
+        c = cites.get(cid)
+        uri = c.source_uri if c else ""
+        return {
+            "id": id,
+            "title": uri,
+            "text": chunk.text,  # FULL, untruncated (contrast search's snippet)
+            "url": uri,
+            "metadata": {
+                "source_as_of": c.as_of.isoformat() if (c and c.as_of) else None,
+                "document_id": chunk.document_id,
+                "ordinal": chunk.ordinal,
+                "found": True,
+            },
+        }
+
+    def get_sources(self) -> list[dict]:
+        """The document inventory backing the ontology, each with its ``as_of``. Calls
+        ``self.repo.list_documents()`` — NEVER ``self.repo.get_sources(claim_ids)``, the
+        unrelated claim-provenance homonym on the Repository (SP_022 review MEDIUM-1).
+        ``raw_text`` is projected away here at the wire boundary."""
+        return [
+            {
+                "source_uri": d.source_uri,
+                "source_type": d.source_type,
+                "title": d.title,
+                "author": d.author,
+                "as_of": d.as_of.isoformat() if d.as_of else None,
+            }
+            for d in self.repo.list_documents()
+        ]
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[dict]:
+        """Enumerate entities, optionally by type — for corpus-wide 'what X are covered'
+        questions. ``attributes`` is intentionally excluded (use ``get_entity`` for detail)."""
+        return [
+            {
+                "id": e.id,
+                "canonical_name": e.canonical_name,
+                "entity_type": e.entity_type,
+                "seeded": e.seeded,
+            }
+            for e in self.repo.list_entities(entity_type)
+        ]
 
     # -- internals ------------------------------------------------------ #
     @staticmethod

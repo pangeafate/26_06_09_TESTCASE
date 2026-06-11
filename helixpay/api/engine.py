@@ -5,10 +5,10 @@ The adapters are **thin** pass-throughs over the frozen ``QueryEngine`` Protocol
 ``get_entity``, ``get_org_chart``, ``find_contradictions`` — so swapping the mock for
 Agent 3's real engine requires **no adapter change**.
 
-Two MCP tools named by the spec (``get_sources``, ``search``) are *retrieval* surfaces
-that the frozen Protocol does not carry. We model them as an **optional extension**
+Four MCP tools (``get_sources``, ``search``, ``fetch``, ``list_entities``) are *retrieval*
+surfaces that the frozen Protocol does not carry. We model them as an **optional extension**
 (``ExposureEngine``) rather than forking the frozen type: the four core tools call the
-guaranteed Protocol methods directly, while the two retrieval tools dispatch through a
+guaranteed Protocol methods directly, while the four retrieval tools dispatch through a
 guarded helper that degrades to a structured "unavailable" payload if the injected engine
 does not implement them.
 
@@ -35,9 +35,10 @@ from helixpay.contracts import (
 
 @runtime_checkable
 class ExposureEngine(QueryEngine, Protocol):
-    """The frozen ``QueryEngine`` plus the two optional retrieval surfaces the MCP
-    tool list names. An engine that implements only ``QueryEngine`` is still a valid
-    injection target — the retrieval tools degrade gracefully (see ``server.py``)."""
+    """The frozen ``QueryEngine`` plus the four optional retrieval surfaces the MCP tool
+    list names (``get_sources``, ``search``, ``fetch``, ``list_entities``). An engine that
+    implements only ``QueryEngine`` is still a valid injection target — the retrieval tools
+    degrade gracefully to an "unavailable" payload (see ``server.py``)."""
 
     def get_sources(self) -> list[dict]:
         """The documents/sources backing the ontology, each with its ``as_of``."""
@@ -45,6 +46,14 @@ class ExposureEngine(QueryEngine, Protocol):
 
     def search(self, query: str, k: int = 10) -> list[dict]:
         """Raw retrieval over chunks (hybrid semantic+lexical), no synthesis."""
+        ...
+
+    def fetch(self, id: str) -> dict:
+        """The full text + provenance of a single chunk by id (from ``search``)."""
+        ...
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[dict]:
+        """Enumerate ontology entities, optionally filtered to one ``entity_type``."""
         ...
 
 
@@ -144,18 +153,44 @@ class MockQueryEngine:
     def get_sources(self) -> list[dict]:
         return [
             {"source_uri": "data/financials/q1_board_deck.pdf", "source_type": "pdf",
-             "as_of": "2025-04-15", "title": "Q1 Board Deck"},
+             "as_of": "2025-04-15", "title": "Q1 Board Deck", "author": None},
             {"source_uri": "data/dashboards/metrics.html", "source_type": "html",
-             "as_of": "2025-05-02", "title": "Metrics Dashboard"},
+             "as_of": "2025-05-02", "title": "Metrics Dashboard", "author": None},
         ]
 
     def search(self, query: str, k: int = 10) -> list[dict]:
+        # Same key shape as HelixQueryEngine.search (id/title/url/snippet/score/
+        # source_as_of/document_id) so the mock never masks a production shape drift.
         return [
-            {"chunk_id": 11, "document_id": 1, "score": 0.91,
-             "text": f"... Q1 revenue: $4.2M ... (matched: {query})"},
-            {"chunk_id": 22, "document_id": 2, "score": 0.78,
-             "text": f"... Q1 revenue: $3.9M ... (matched: {query})"},
+            {"id": "11", "title": "data/financials/q1_board_deck.pdf",
+             "url": "data/financials/q1_board_deck.pdf", "document_id": 1, "score": 0.91,
+             "source_as_of": "2025-04-15",
+             "snippet": f"... Q1 revenue: $4.2M ... (matched: {query})"},
+            {"id": "22", "title": "data/dashboards/metrics.html",
+             "url": "data/dashboards/metrics.html", "document_id": 2, "score": 0.78,
+             "source_as_of": "2025-05-02",
+             "snippet": f"... Q1 revenue: $3.9M ... (matched: {query})"},
         ][:k]
+
+    def fetch(self, id: str) -> dict:
+        body = {  # id -> (source_uri, text, source_as_of, document_id)
+            "11": ("data/financials/q1_board_deck.pdf", "Q1 revenue: $4.2M", "2025-04-15", 1),
+            "22": ("data/dashboards/metrics.html", "Q1 revenue: $3.9M", "2025-05-02", 2),
+        }
+        if id not in body:
+            return {"id": id, "title": "", "text": "", "url": "", "metadata": {"found": False}}
+        uri, text, as_of, doc_id = body[id]
+        return {"id": id, "title": uri, "text": text, "url": uri,
+                "metadata": {"source_as_of": as_of, "document_id": doc_id,
+                             "ordinal": 0, "found": True}}
+
+    def list_entities(self, entity_type: Optional[str] = None) -> list[dict]:
+        rows = [
+            {"id": 5, "canonical_name": "HelixPay", "entity_type": "other", "seeded": True},
+            {"id": 6, "canonical_name": "HelixPay Brasil", "entity_type": "other", "seeded": True},
+            {"id": 1, "canonical_name": "Maria Santos", "entity_type": "person", "seeded": True},
+        ]
+        return [r for r in rows if entity_type is None or r["entity_type"] == entity_type]
 
 
 # --------------------------------------------------------------------------- #
