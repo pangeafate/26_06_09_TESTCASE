@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-12
+last-reconciled: 2026-06-13
 authoritative-for: [active-sprint, sprint-history]
 ---
 
@@ -10,9 +10,15 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_028b
-**Started:** 2026-06-11
-**Stage:** Complete — LLM contradiction adjudication (paid refiner on the SP_028a deterministic sweep). Deploy gated; live full-corpus re-record/verify pending operator.
+**Current:** SP_030
+**Started:** 2026-06-12
+**Stage:** Complete (db path PENDING-CI) — serving-path test/CI hardening. CI now provisions
+pgvector and runs the 49 db integration tests with a fail-loud `HELIXPAY_REQUIRE_DB` guard;
+added a fake↔real repository conformance test, an MCP-tools-e2e file driving the 12 tools
+through the real `HelixQueryEngine`→`PostgresRepository`, owner-cited redundancy cleanup, and
+a `validate_tdd` auto-detect + advisory mirror-map. No production `helixpay/` changes. Local
+suite green (814 pass / 77 skip); db-gated tests' first green run is the CI run on the pushed
+branch. Follow-on SP_031 (5 production serving-path smells) sequenced after.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 

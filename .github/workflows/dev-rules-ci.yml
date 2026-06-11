@@ -15,6 +15,31 @@ jobs:
   gateway:
     runs-on: ubuntu-latest
 
+    # The serving path (MCP dispatch → HelixQueryEngine → PostgresRepository) is only
+    # exercised by `db`-marked integration tests, which auto-skip without DATABASE_URL.
+    # Provision pgvector so those tests actually RUN here, and set HELIXPAY_REQUIRE_DB
+    # so an absent/misconfigured DB is a loud failure (test/conftest.py) rather than a
+    # silent skip of the whole integration suite. (SP_030)
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      HELIXPAY_REQUIRE_DB: "1"
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        # POSTGRES_USER is intentionally omitted — the image defaults it to `postgres`,
+        # which matches the user in DATABASE_URL below.
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
         with:

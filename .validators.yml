@@ -26,6 +26,15 @@ coverage:
   report: coverage.xml  # path (relative to project root) to the Cobertura report
   require_report: false # true → a missing report is a hard failure, not advisory
 
+# Structural half of validate_tdd.py (every source needs a test_<name>.py). HelixPay
+# has no src/ and FLATTENS the test mirror (helixpay/ingest/extract/coerce.py →
+# test/unit/ingest/test_coerce.py), so (a) point the scan at the real package and
+# (b) keep the "no test file found" result ADVISORY — it reports gaps but never reds
+# the deploy-gating gateway (the coverage gate above stays the enforced part). SP_030.
+tdd:
+  src_dir: helixpay        # scan the real package (there is no src/)
+  structure_advisory: true # report unmatched sources, do not fail the build on them
+
 # Language-agnostic God-file sensor. Counts raw lines and import-like lines per
 # source file. lines > fail_lines is a hard FAIL; lines > warn_lines or
 # imports > warn_imports are warnings (exit 0). Built-in vendored/generated dirs

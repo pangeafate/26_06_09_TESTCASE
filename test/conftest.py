@@ -2,16 +2,45 @@
 
 DB integration tests are marked ``db`` and are auto-skipped when ``DATABASE_URL``
 is unset — there is NO fallback connection string anywhere (secrets from env only).
+
+When ``HELIXPAY_REQUIRE_DB`` is truthy (set by CI), an absent ``DATABASE_URL`` is a
+**hard, loud failure** instead of a silent skip — so a misconfigured CI database
+can never masquerade as a green run by quietly skipping the integration suite.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+
+def _require_db_violation(env: Mapping[str, str]) -> str | None:
+    """Return an error message when the DB is *required but absent*, else ``None``.
+
+    Pure (env-in, message-out) so it is unit-testable without a database. The DB is
+    required when ``HELIXPAY_REQUIRE_DB`` is truthy; it is absent when ``DATABASE_URL``
+    is unset/empty. Every other combination (no flag, or url present) returns ``None``
+    and preserves the normal skip/run behavior.
+    """
+    require = env.get("HELIXPAY_REQUIRE_DB", "").strip().lower() not in ("", "0", "false", "no")
+    if require and not env.get("DATABASE_URL"):
+        return (
+            "HELIXPAY_REQUIRE_DB is set but DATABASE_URL is unset — refusing to "
+            "silently skip the DB integration suite. Provision the database (or unset "
+            "HELIXPAY_REQUIRE_DB) and retry."
+        )
+    return None
+
+
+def pytest_configure(config):
+    violation = _require_db_violation(os.environ)
+    if violation is not None:
+        raise pytest.UsageError(violation)
 
 
 def pytest_collection_modifyitems(config, items):

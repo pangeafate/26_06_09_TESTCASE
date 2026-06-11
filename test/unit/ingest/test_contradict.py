@@ -124,21 +124,13 @@ def test_detection_does_not_mutate_claims():
     )  # never collapsed
 
 
-def test_normalize_value_parses_magnitude_and_currency():
-    assert normalize_value("SGD 14.2M")[1] == 14_200_000.0
-    assert normalize_value("120K")[1] == 120_000.0
-    assert normalize_value("3,424")[1] == 3424.0
-    assert normalize_value("R$22.0M")[1] == 22_000_000.0
-    assert normalize_value("end of June")[1] is None
-
-
-def test_normalize_value_refuses_to_pull_digits_from_labels():
-    # labels/durations/versions must stay non-numeric, else they get mis-compared
-    assert normalize_value("18 months")[1] is None
-    assert normalize_value("Q1 2026")[1] is None
-    assert normalize_value("v1.0")[1] is None
-
-
+# NOTE: pure ``normalize_value`` parsing (magnitude/currency suffixes, comma
+# separators, label-digit refusal) is owned by ``test/unit/ingest/test_normalize.py``
+# (``test_magnitude_suffix_variants`` covers the K/b/bn suffixes,
+# ``test_currency_and_magnitude_word`` + ``test_real_currency_symbol`` the SGD/R$ forms,
+# ``test_comma_thousands_separator`` the comma parse, ``test_quarter_labels_compare_as_text``
+# + ``test_version_string_not_numeric`` the label-digit refusal). This file keeps only
+# ``contradict``'s OWN ``values_conflict`` semantics (SP_030 Item 4 — owner-cited removal).
 def test_unicode_minus_equals_ascii_minus():
     assert normalize_value("−11%")[1] == normalize_value("-11%")[1] == -11.0
     assert values_conflict("−11%", "-11%") is False

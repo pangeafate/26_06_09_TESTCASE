@@ -88,3 +88,31 @@ def test_get_entity_returns_claims(seeded_repo):
     detail = engine.get_entity("Revenue")
     assert detail["entity"].get("canonical_name") == "Revenue"
     assert any(c["predicate"] == "revenue" for c in detail["claims"])
+
+
+class _RaisingSynthesizer:
+    """Models the external-model boundary failing mid-answer."""
+
+    def synthesize(self, prompt: str, *, schema: dict) -> dict:
+        raise RuntimeError("synthesis backend unavailable")
+
+
+def test_ask_degrades_when_synthesis_raises(seeded_repo):
+    # SP_030: the real-path synthesis-failure branch (engine.ask except handler) must
+    # degrade — return a bundle, never leak the prompt or crash — and the structured
+    # contradiction path (independent of the synth) still surfaces the planted conflict.
+    engine = HelixQueryEngine(seeded_repo, _FakeEmbedder(), _RaisingSynthesizer(), k=8)
+    bundle = engine.ask("What was HelixPay's Q1 2026 revenue?")
+    assert bundle is not None
+    assert bundle.contradictions  # structured path is synth-independent
+    assert "synthesis backend unavailable" not in (bundle.answer or "")
+
+
+def test_search_then_fetch_real_path(seeded_repo):
+    # Exercises the real hybrid-retrieval search + chunk fetch path end-to-end (the
+    # serving methods previously covered only via FakeRepository slices).
+    engine = HelixQueryEngine(seeded_repo, _FakeEmbedder(), _FakeSynthesizer({"sentences": []}), k=8)
+    hits = engine.search("revenue", k=3)
+    assert hits and all("id" in h for h in hits)
+    fetched = engine.fetch(str(hits[0]["id"]))
+    assert fetched["metadata"]["found"] is True and fetched["text"]

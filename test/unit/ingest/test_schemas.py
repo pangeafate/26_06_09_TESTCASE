@@ -65,6 +65,5 @@ def test_none_as_of_is_allowed_and_returns_none():
     assert c.as_of_date() is None
 
 
-def test_hypothetical_defaults_false():
-    c = ClaimOut(subject="X", predicate="p", object_value="v")
-    assert c.hypothetical is False
+# (Removed ``test_hypothetical_defaults_false`` — it re-asserted a pydantic field
+# default guaranteed by the ``ClaimOut`` model definition; SP_030 Item 4.)

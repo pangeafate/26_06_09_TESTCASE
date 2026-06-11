@@ -21,6 +21,7 @@ touches_paths:
   - test/integration/db/test_mcp_tools_integration.py
   - test/integration/query/test_query_integration.py
   - test/unit/ingest/test_contradict.py
+  - test/unit/ingest/test_normalize.py
   - test/golden/test_harness.py
   - test/unit/ingest/test_schemas.py
   - validators/validate_tdd.py
@@ -348,8 +349,7 @@ loud** rather than skip, so a broken CI DB cannot masquerade as success.
 > are high-blast-radius; Items 1 and 5 reviewed with Foundational-level care per
 > plan-review L1.)
 
-- Iteration 1 — independent `architect-reviewer` (plan-blind), verified claim-by-claim
-  against the real repo. Verdict **approve-with-changes**. Findings:
+- **Iteration 1** — independent `architect-reviewer` (plan-blind). Files reviewed: the SP_030 plan + `dev-rules-ci.yml`, `dev-gateway.py`, `validate_tdd.py`/`test_validate_tdd.py`, `conftest.py`, `test_query_integration.py`, `api/engine.py`, `query/engine.py`, `mcp/server.py`, `fakes.py`. Verdict **approve-with-changes** — 2 CRITICAL, 3 HIGH, 4 MEDIUM, 3 LOW. Findings:
   - **C1 (CRITICAL):** Item 3 targeted the wrong layer — the 8 MCP tools dispatch via
     `mcp/server.py::_retrieval` → global `get_engine()`, not a callable `ExposureEngine`;
     and `test/unit/api/test_mcp.py` already drives all 12 tools + the `{available:false}`
@@ -368,8 +368,7 @@ loud** rather than skip, so a broken CI DB cannot masquerade as success.
     `contradict.py` deletion over-reaches into `values_conflict` (owned by `contradict`, not
     `normalize`).
   - L1 (tier), L2 (`structure_touched`), L3 (`touches_paths`) noted.
-- Iteration 2 — author reconciliation. **All CRITICAL + HIGH + MEDIUM findings folded
-  into Technical Approach + frontmatter above:**
+- **Iteration 2** — author reconciliation. Files reviewed: the same plan + frontmatter. **All CRITICAL + HIGH + MEDIUM findings folded into Technical Approach + frontmatter above (no CRITICAL/HIGH left open):**
   - C1/C2 → Item 3 rewritten to `build_mcp()` + `set_engine(HelixQueryEngine(seeded_repo,…))`
     + `call_tool`, scoped to the real-engine delta; coverage prose retargeted to
     `query/engine.py`/`db/repository.py`; Current-State corrected.
@@ -388,12 +387,52 @@ loud** rather than skip, so a broken CI DB cannot masquerade as success.
 
 ### Post-Implementation Review
 
-- Iteration 1 — independent plan-blind code-reviewer over the diff: _pending_.
-- Iteration 2 — author runtime-evidence re-verification: _pending_.
+- **Iteration 1** — independent plan-blind `code-reviewer`. Files reviewed: the working-tree diff + new files (`dev-rules-ci.yml`, `conftest.py`, `validate_tdd.py`, `.validators.yml`, the 4 new test files, the 4 trimmed/extended test files) cross-checked against `repository.py`, `fakes.py`, `mcp/server.py`, `query/engine.py`, `test_normalize.py`, `test_rigor.py`. Verdict **APPROVE-WITH-NITS** — zero BLOCKING, zero HIGH; 3 MEDIUM + nits applied. Verified: CI service
+  block correct (image/ports/health/env scope/URL all consistent); require-db guard
+  correct + the local skip path intact; every deleted test's behavior confirmed owned
+  elsewhere; conformance fake/real populate paths build equivalent data and the reads
+  hold under real SQL semantics; MCP e2e saves/restores the global engine and its
+  seeded assertions (Wei Chen/Priya Raman/Revenue/`value_conflict`) match
+  `seed_all(with_fixture=True)`; `validate_tdd` advisory mode preserves strict behavior
+  when `structure_advisory` is false. Three MEDIUM nits **applied**: (a) the one genuine
+  coverage gap from the deletion — `normalize_value("v1.0")` non-numeric — re-pinned in
+  `test_normalize.py::test_version_string_not_numeric`; (b) DATA-path comment in the MCP
+  e2e file; (c) `get_relationships` tool now asserts non-empty `results`. NIT applied:
+  `POSTGRES_USER` default documented in the workflow.
+- **Iteration 2** — author runtime-evidence re-verification. Files reviewed: the full changed set re-run end-to-end (0 CRITICAL/HIGH; the 3 MEDIUM nits applied and re-tested):
+  - `uv run pytest test -o addopts="" -q` → **814 passed, 77 skipped, 0 failed** (~1.2s).
+    Skips are env-gated (db + 2 API-key); +24 db-gated added (conformance real-half 11,
+    MCP e2e 11, query-integration +2) all skip cleanly without a DB.
+  - Guard fires loud under CI flag: `HELIXPAY_REQUIRE_DB=1` + no `DATABASE_URL` →
+    `pytest.UsageError` (run aborts); without the flag, db tests skip as before.
+  - `uv run mypy helixpay` → clean (74 files; confirms no production code altered).
+  - `validate_tdd.py .` → auto-detects `helixpay`, reports 15 ADVISORY gaps, **exits 0**
+    (cannot red the deploy gate); mirror-map cleared ~20 of the old ~35 false positives.
+    Genuine residual advisory gaps (visible debt, out of scope): `audit/run.py`,
+    `config.py`, `query/clients.py`, `seed/fixtures.py`, `audit/__main__.py`.
+  - Redundancy: net non-db count 796 → 794 (−7 deleted owner-cited, +5 guard) before the
+    db-gated additions; no coverage regression.
 
 ## Outcome
 
-_Pending implementation._
+Complete (pending the CI green run of the db path — see below). Delivered all five items:
+(1) CI provisions pgvector + sets `HELIXPAY_REQUIRE_DB`, converting 49 perpetually-
+skipped integration tests into real gates, with a fail-loud guard so a misconfigured CI
+DB can never silently skip again. (2) Fake↔real repository conformance test pins the
+`FakeRepository` read contract against `PostgresRepository`. (3) Serving-path backfill —
+a new MCP-tools-e2e file drives all 12 tools (incl. the 8 retrieval tools) through the
+**real** `HelixQueryEngine`→`PostgresRepository`, plus the synth-failure degrade and
+search→fetch real-path branches. (4) ~7 redundant normalize/trivial test functions
+removed (owner-cited; `values_conflict` tests deliberately KEPT). (5) `validate_tdd`
+auto-detects `helixpay` + a layout-tolerant mirror-map, advisory so it reports gaps
+without reddening the deploy gate. Author-blind review APPROVE-WITH-NITS (all applied);
+local runtime evidence green; mypy clean.
+
+**Behavioral closure (db path): PENDING-CI.** This build env has no Docker/Postgres, so
+the db-gated tests (conformance real-half, MCP e2e, query-integration additions) are
+authored + verified to skip cleanly locally and inspection-checked against the proven
+integration patterns; their first green run is the CI run on the pushed branch. The
+require-db guard guarantees a DB misconfig fails loud rather than masquerading as green.
 
 ## Hand-off
 
