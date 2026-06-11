@@ -175,6 +175,15 @@ Architect + code reviewers, 2026-06-11. **0 CRITICAL — approach sound.** Resol
   blocking. Applied: H1 (drop the loop-closure — pass keymap dict directly to the wrapper),
   H2 (document bare `- 5` parse with a test), M1 (link-dedup test), M3 (disjoint-set import
   assert in predicate_cardinality). Re-verified green.
+- **Stage 5 — iteration 2 (post-impl, plan-blind)** 2026-06-11, independent general-purpose
+  reviewer at the SP_024–028 merge gate, code+tests only: 0 CRITICAL / 0 HIGH. Verified the
+  layer boundary (sweep/`dedup.py` import-blind to `helixpay.db`), cardinality-skip on the claim
+  loop only, value-pair dedup, and the `normalize.py` "no date/rounding equivalence" invariant;
+  $0 stub suite green (53 passed across cardinal/dedup/recompute/contradiction). Verdict
+  SHIP-WITH-NITS — the only finding was *this* documentation gap (single Stage-5 iteration on
+  record), now closed by this entry. Files reviewed: helixpay/ingest/dedup.py,
+  helixpay/ingest/predicate_cardinality.py, scripts/recompute_contradictions.py,
+  helixpay/ingest/normalize.py, test/unit/ingest/test_sweep_dedup.py.
 - **Live $0 measurement** (sweep over `helixpay_full`): **266 → 115** contradictions
   (claim 100 + link 15; 19 set_valued groups skipped). Oracle baseline **preserved**
   (`confluence-ga-target` still caught — 1/8, as expected: this layer raises PRECISION; recall is
