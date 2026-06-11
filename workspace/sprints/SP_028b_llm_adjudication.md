@@ -25,7 +25,11 @@ touches_paths:
   - test/unit/ingest/test_adjudicate.py
   - test/unit/ingest/test_llm_temperature.py
   - test/integration/db/test_adjudicate_integration.py
+  - eval/contradiction_recall.py
+  - test/golden/contradictions.yaml
+  - test/golden/test_contradiction_recall.py
   - CLAUDE.md
+  - USER_STORIES.md
   - workspace/sprints/SP_028b_llm_adjudication.md
 touches_checklist_items: [adjudicate-cluster-gen, adjudicate-prompt, adjudicate-schema, adjudicate-llm-seam-temperature, adjudicate-content-cache, adjudicate-write-singlewriter, adjudicate-fallback-floor, adjudicate-cli-dryrun, adjudicate-oracle-score, claude-md-adjudication-gotcha]
 ---

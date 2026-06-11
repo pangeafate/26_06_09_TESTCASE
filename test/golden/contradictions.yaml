@@ -1,0 +1,174 @@
+# HelixPay contradiction-recall ORACLE — the 8 conflicts a human found by eye in data/.
+#
+# PURPOSE. This is a SCORING SET, not pipeline input. The contradiction detector runs with
+# ZERO knowledge of this file; the blind scorer (eval/contradiction_recall.py) then reads
+# whatever contradiction ROWS the detector materialized and asks, per item, "did the system
+# independently produce a row that satisfies this?". It measures the detector's recall against
+# an external human oracle — it never tells the detector the answer.
+#
+# NO HARDCODING (CLAUDE.md self-improvement scope / no-hardcoding mandate). This file lives
+# under test/ and is imported ONLY by the eval harness + tests, NEVER by helixpay/. If removing
+# this file changed what the *pipeline* outputs, that would be hardcoding and a bug; it may only
+# change whether the *test* can score itself. A test asserts no helixpay/ module references it.
+#
+# BASELINE. ``baseline_caught: true`` marks a conflict the detector ALREADY materializes today
+# (measured 2026-06-11: 1/8 — only the Confluence GA target). The DB scorer asserts the live
+# catch count never drops below the number of baseline_caught items (a ratchet). As each lever
+# in research/ lands and lifts an item, flip its flag to true so the floor rises with it.
+#
+# Schema per item:
+#   id              unique slug
+#   severity        HIGH | MEDIUM | LOW (the human's triage)
+#   subject         entity the conflict is about (resolved via Repository.resolve_entity)
+#   predicate       the attribute in conflict (metric_vocab key where applicable)
+#   predicate_b     (optional) second predicate — for CROSS-PREDICATE conflicts (#6)
+#   value_a/value_b the two conflicting values, as printed in the sources
+#   source_a/source_b  the raw data/ files each side was read from (must exist)
+#   expected        surfaced (every item must end up as a first-class row — never resolved away)
+#   baseline_caught whether the detector materializes this TODAY
+#   root_cause      why it is missed now (the gap, in one line)
+#   lever           the research/ remediation expected to catch it
+#   note            exactly where it was read / why it is a genuine conflict
+# LEAKAGE: these values must never appear in any prompts/ few-shot (a test guards this).
+
+contradictions:
+  # ── #1 — the one we already catch ───────────────────────────────────────────
+  - id: confluence-ga-target
+    severity: HIGH
+    subject: Project Confluence
+    predicate: ga_target
+    value_a: "end of June 2026"
+    value_b: "end of Q3 2026"
+    source_a: data/all-hands-2026-04-15.md
+    source_b: data/board-update-2026-04-22.md
+    expected: surfaced
+    baseline_caught: true
+    root_cause: "already detected — ga_target bypasses the validity-window gate (_TARGET_PREDICATES)"
+    lever: "none — preserved"
+    note: >-
+      Public all-hands stance (end of June / end-Q2) vs the internal/board reality
+      (end of Q3, ~Sep 30). Four dated sources back Q3. THE primary planted contradiction.
+
+  # ── #2,#3 — the fragmented bug ticket (entity-merge + semantics) ─────────────
+  - id: hxloy487-impact
+    severity: HIGH
+    subject: HX-LOY-487
+    predicate: bug_impact
+    value_a: "low-priority backlog item"
+    value_b: "customer-visible defect overstating Net by R$ 2.140,00/month"
+    source_a: data/code/contributors-analysis-q1-2026.md
+    source_b: data/email/customer-acai-express-thread.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "entity fragmented (~12 HX-LOY-487 rows) + semantic (text framing, not a value)"
+    lever: "stage-1 entity merge (ticket id) + LLM cluster-adjudication"
+    note: >-
+      Engineering frames it as a long-open backlog item (contributors-analysis: 'open since
+      Nov 2025'; eng-random: 'add it to the eng wiki backlog') while CS/customer frame it as a
+      material customer-visible defect (acai thread line 27: 'A diferença de março é R$ 2.140,00').
+
+  - id: hxloy487-fix-eta
+    severity: HIGH
+    subject: HX-LOY-487
+    predicate: fix_eta
+    value_a: "imminent / early fix promised"
+    value_b: "behind Confluence GA — late August to mid September"
+    source_a: data/email/customer-acai-express-thread.md
+    source_b: data/email/customer-acai-express-thread.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "entity fragmented + temporal (two as_of points are non-overlapping → window-gated)"
+    lever: "stage-1 entity merge (ticket id) + target/temporal-predicate window bypass"
+    note: >-
+      Early reassurance that a fix is on the way ('disseram que o fix do app sairia') vs the
+      honest answer that the fix sits behind the merchant_id schema migration and 'lands roughly
+      when Confluence GA lands (late August / mid September)' (acai thread lines 64/79/103).
+
+  # ── #4 — the dual-type account (open-class mint + semantics) ─────────────────
+  - id: acai-account-status
+    severity: MEDIUM
+    subject: Açaí Express SP
+    predicate: account_status
+    value_a: "open sales prospect — Proposta, R$280K"
+    value_b: "existing customer — months-long support escalation"
+    source_a: data/dashboards/sales-pipeline-2026-04-21.html
+    source_b: data/email/customer-acai-express-thread.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "account_status is not a grouped predicate; dual subject_type (customer/other) mint"
+    lever: "LLM cluster-adjudication (semantic) over the merged account entity"
+    note: >-
+      The sales pipeline lists 'Açaí Express SP' as an open deal ('Proposta', R$280K) while the
+      support thread treats it as an existing customer with an 11-months-running escalation. The
+      same account is simultaneously net-new-in-pipeline and an established customer.
+
+  # ── #5 — the fragmented deal (entity-merge → deterministic) ──────────────────
+  - id: northwind-close-date
+    severity: MEDIUM
+    subject: Northwind Logistics
+    predicate: expected_close_date
+    value_a: "2026-05-12"
+    value_b: "2026-05-26"
+    source_a: data/dashboards/sales-pipeline-2026-04-21.html
+    source_b: data/chat/sales-floor-april.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "entity fragmented across the two sources → the two close-dates never group"
+    lever: "stage-1 entity merge (deal name) → existing deterministic value-compare"
+    note: >-
+      The pipeline dashboard shows close 2026-05-12 ('on track'); the sales-floor chat says the
+      procurement review slipped 2 weeks so 'close date moves from may 12 to may 26'.
+
+  # ── #6 — the cross-predicate org conflict (new comparison + semantics) ───────
+  - id: maria-santos-dual-line
+    severity: MEDIUM
+    subject: Maria Santos
+    predicate: reports_to
+    predicate_b: dotted_line_to
+    value_a: "Marco Bianchi"
+    value_b: "Marco Bianchi"
+    source_a: data/org-chart.md
+    source_b: data/org-chart.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "CROSS-PREDICATE — a solid AND dotted line to the SAME person; single-predicate grouping never forms the pair"
+    lever: "stage-1 cross-predicate clustering within a subject + LLM adjudication"
+    note: >-
+      org-chart.md places Maria Santos under Marco Bianchi (solid reports_to) AND lists her
+      functional dotted-line as 'Maria Santos ↔ Marco Bianchi'. A dotted line is meant to be a
+      DISTINCT counterpart from the solid manager; both pointing at Marco is the conflict.
+
+  # ── #7 — the predicate-synonym headcount (synonym layer → deterministic) ─────
+  - id: sara-team-size
+    severity: LOW
+    subject: Sara Wijaya
+    predicate: team_size
+    value_a: "7 engineers"
+    value_b: "about eight engineers"
+    source_a: data/org-chart.md
+    source_b: data/interviews/engineering/Sara_Wijaya.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "predicate fragmentation (team_size ≈ headcount_managed) and/or text-numeric value forms"
+    lever: "predicate-synonym canonicalization (+ normalize 'about eight' → 8)"
+    note: >-
+      org-chart.md lists Sara's team as '7 engineers'; her interview says she runs 'the team about
+      eight engineers in sg'. Same person, same team, 7 vs 8.
+
+  # ── #8 — the qualifier conflict where the headline number AGREES (LLM-only) ──
+  - id: cosmos-country-count
+    severity: LOW
+    subject: Cosmos Hotels
+    predicate: country_count
+    value_a: "47 properties across 2 countries (Malaysia and Thailand)"
+    value_b: "47 properties across 3 countries"
+    source_a: data/interviews/sales/Marcus_Lee.md
+    source_b: data/email/cosmos-hotels-debrief.md
+    expected: surfaced
+    baseline_caught: false
+    root_cause: "the headline value (47) AGREES; the conflict is in a qualifier (2 vs 3 countries) the value-comparator never inspects"
+    lever: "LLM cluster-adjudication reading full claim text"
+    note: >-
+      Marcus Lee's interview: 'cosmos has forty seven properties across malaysia and thailand'
+      (2 countries); the loss debrief: '47 properties across 3 countries'. The 47 matches, so a
+      value-comparator sees agreement — only reading the text surfaces the 2-vs-3 conflict.
