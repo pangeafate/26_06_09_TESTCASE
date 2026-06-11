@@ -43,6 +43,13 @@ replay:
 demo:
 	$(COMPOSE) run --rm -v "$(PWD)/test:/app/test" app python -m eval.run
 
+## audit: read-only extraction-quality audit over the configured DB (no LLM/Voyage,
+## read-only session — never mutates). Advisory: prints provenance/grounding/resolution
+## integrity, planted traps, and a suspicious-oversampled sample. Point DATABASE_URL at
+## the full-corpus store to audit it; add `--strict` to exit 1 on any ERROR/failed trap.
+audit:
+	$(APP_RUN) python -m helixpay.audit
+
 ## test: the product test suite (unit + DB-gated integration)
 test:
 	uv run pytest test

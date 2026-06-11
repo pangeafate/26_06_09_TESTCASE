@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-11
+last-reconciled: 2026-06-12
 authoritative-for: [user-stories, acceptance-criteria]
 ---
 
@@ -96,3 +96,21 @@ grader. Each story notes the gate's contribution and the owning agent for the re
   (SP_028a); two labeled claim/link blocks + Opus(temp-0) adjudication + content cache +
   deterministic fallback floor (SP_028b); frozen `Contradiction`/`Repository` untouched. Full:
   SP_028a, SP_028b.
+
+## US-10 — Trust what landed: an extraction-quality audit (SP_029)
+> As the operator, after any ingest/replay I can run a read-only `make audit` (`python -m
+> helixpay.audit`) that judges the integrity of everything that landed — not just the 41 known
+> golden facts — so I can see provenance-chain breaks, evidence that doesn't ground its value,
+> honestly-NULL subjects, and known-answer trap failures, with a suspicious-oversampled sample to
+> read by eye.
+
+- Acceptance: the audit is read-only by construction (driver `read_only` session, integration-test
+  proven — a write raises) and advisory, not a CI gate (`--strict` opt-in). Evidence grounding is a
+  3-way classifier (`exact`/`normalized`/`absent`) shared across the invariant, the suspicious-sample
+  heuristic, and the report, so case/whitespace-only deviations are an honest `evidence_not_verbatim`
+  WARN while genuinely-absent evidence stays an `evidence_not_in_chunk` ERROR — a wrong digit can
+  never launder to WARN. On live `helixpay_full` it cut spurious ERRORs 322 → 50 and surfaced the
+  producer's non-byte-verbatim evidence storage as durable tech-debt.
+- Gate: `helixpay/audit/**` (read-only invariants/traps/sampling/report) + `helixpay/db/audit_queries.py`
+  (read-only SQL, off the frozen `Repository`); `make audit`; the 3-way `evidence_grounding` pinned to
+  case+whitespace only (never the shared `ingest.normalize`). Full: SP_029.

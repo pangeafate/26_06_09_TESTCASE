@@ -1,0 +1,65 @@
+{
+  "total_claims": 2347,
+  "counts": {
+    "documents": 44,
+    "chunks": 98,
+    "entities": 313,
+    "entity_aliases": 17,
+    "metric_vocab": 15,
+    "claims": 2347,
+    "links": 471,
+    "contradictions": 67
+  },
+  "evidence_columns_present": true,
+  "violations_by_category": {
+    "value_not_in_evidence": 1082,
+    "evidence_not_in_chunk": 50,
+    "evidence_not_verbatim": 136
+  },
+  "error_count": 50,
+  "traps": [
+    {
+      "name": "confluence_ga_surfaces",
+      "passed": true,
+      "detail": "a contradiction row pairs two differing ga_target claims (values=['June 2026', 'September 30 2026', 'end of June 2026', 'end of Q3 2026', 'end of September 2026', 'late August / mid September 2026', 'late August to mid September 2026'])"
+    },
+    {
+      "name": "no_false_revenue_contradiction",
+      "passed": false,
+      "detail": "a revenue contradiction row exists (claim values seen=['4.1M', '9.4 (against plan of 10)', 'R$22.0M', 'R$6.8M', 'SGD 10.1M', 'SGD 14.2M', 'SGD 15.4M', 'SGD 4.1M', 'SGD 4.5M', 'SGD 4.8M', 'SGD 4.8M (BRL 22M)', 'SGD 5.3M', 'SGD 9.0M', 'SGD 9.4M']) \u2014 on real data all sources report SGD 14.2M, so this is a FALSE POSITIVE (or the gate fixture was seeded with_fixture=True; audit a real-ingest DB)"
+    },
+    {
+      "name": "two_marias_distinct",
+      "passed": true,
+      "detail": "2 distinct Maria entities kept separate: ['Maria Santos', 'Maria Silva']"
+    }
+  ],
+  "sample_claim_ids": [
+    44,
+    846,
+    138,
+    385,
+    1207,
+    1982,
+    575,
+    1898,
+    1008,
+    996,
+    351,
+    573,
+    353,
+    429,
+    1850,
+    2020,
+    643,
+    315,
+    1489,
+    532,
+    107,
+    1064,
+    861,
+    1488,
+    531
+  ],
+  "clean": false
+}

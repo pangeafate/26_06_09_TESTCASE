@@ -215,3 +215,43 @@ Append the verbose form here **and** the condensed line in `CLAUDE.md` whenever 
   SP_024–028 merge gate. The `add_link` `raw_verb` INSERT in `62e6906` predates its `ALTER TABLE`
   column in `bac2f0f`, so that single commit is not independently bisectable against the DB —
   harmless at HEAD where both coexist.
+
+## SP_029 — extraction-quality audit subsystem
+
+- **The audit is read-only and advisory (SP_029):** `python -m helixpay.audit` / `make audit` judges
+  what landed in the DB after an ingest/replay — the integrity/precision census the 41-fact golden
+  recall oracle structurally can't give. It checks provenance chain (claim→chunk→document), grounding
+  (evidence supports the value), resolution honesty (subject resolved or honestly NULL), predicate
+  canonicalization; runs planted known-answer traps that pinpoint which layer broke; and prints a
+  deterministic suspicious-oversampled sample to read by eye. Read-only by construction (driver
+  `read_only` session, proven by an integration test that asserts a write raises). It is ADVISORY,
+  NOT a CI gate (`--strict` exit-1 is opt-in) — on the full corpus there's a known ~50-ERROR +
+  ~136-WARN floor, so a hard gate would be permanently red.
+- **Evidence grounding is THREE-way, not exact-vs-absent (SP_029):** the shared
+  `helixpay/audit/invariants.py` `evidence_grounding(evidence, chunk_text)` returns `exact`
+  (byte-verbatim substring → clean), `normalized` (matches only after `casefold` + whitespace-collapse
+  → **WARN `evidence_not_verbatim`**), or `absent` (not present even normalized → **ERROR
+  `evidence_not_in_chunk`**). It is the single source of truth for `check_evidence`, `is_suspicious`,
+  and `report._sample_flags` (they must never drift). The helper `_normalize_span` is pinned to case +
+  whitespace ONLY — deliberately stricter than the producer's `grounding._norm_text` (which also folds
+  punctuation) and never the shared `ingest.normalize` (8 callers incl. the eval matcher) — so a
+  genuinely-wrong span (`14.2M` vs `14.3M`) can never launder into a WARN; it stays an ERROR. The
+  `offsets_mismatch_evidence` ERROR is gated INSIDE the byte-exact branch, so a cosmetic claim (whose
+  raw offsets point at the differently-cased chunk text) does not double-ERROR. Live `helixpay_full`
+  went 322 ERROR → 50 ERROR (genuine) + 136 `evidence_not_verbatim` WARN + 0 offset-ERROR with this fix.
+- **Producer non-verbatim evidence is real tech-debt the audit only SURFACES (SP_029):**
+  `helixpay/ingest/pipeline.py` persists `evidence=claim_out.evidence` (the model's quote) and
+  `grounding.locate_span` anchors a case/whitespace-tolerant span (`\s+`/`IGNORECASE`) returning RAW
+  chunk offsets — so a lower-cased / re-spaced evidence string lands with valid offsets but is not a
+  byte-exact substring. `grade()` returns `GRADE_EXACT` for such deviations (it normalizes through the
+  looser `_norm_text`), so there's NO confidence penalty and NO `grounding_grade` column: the audit's
+  `evidence_not_verbatim` WARN is the ONLY durable signal of it. Closing the loop (store the grade, or
+  re-slice the matched raw span back into `evidence` so storage is byte-verbatim) is a future pipeline
+  sprint, gated behind a paid re-record. SP_009 *aspires* to byte-verbatim spans; the shipped pipeline
+  does not guarantee it.
+- **Audit traps are calibrated for the 9-doc fixture (SP_029):** `no_false_revenue_contradiction` is
+  INFORMATIONAL on the full corpus — real regional (SGD vs R$) / quarterly / plan-vs-actual revenue
+  values legitimately contradict, so the trap correctly reports revenue contradiction rows exist (their
+  precision is SP_028a/SP_028b's concern, not a pipeline bug). `confluence_ga_surfaces` and
+  `two_marias_distinct` hold on both fixture and full corpus. `fetch_claim_rows` materializes the full
+  claims table — fine for a bounded corpus, add a server-side cursor for 100k+.
