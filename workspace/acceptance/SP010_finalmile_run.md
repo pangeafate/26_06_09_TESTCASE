@@ -33,7 +33,32 @@ The 3 still **MISSING** are exactly the re-record-gated facts — confirmed unre
 **Zero false attributions (mismatch=0).** The deterministic layer added the one recall it can
 and broke nothing.
 
-## The honest gate to ≥80% (operator-approved paid re-record)
+## PAID RE-RECORD RESULT (operator-approved, 2026-06-11)
+
+The operator approved the gated re-record. Reset derived rows + re-seeded, then re-recorded all
+9 smoke docs with the new SP_019 prompt (`run_smoke.py --record --force`, Sonnet extract + Voyage
+embed, **no Opus**, `HELIXPAY_PROMPTS_DIR=/app/prompts`), all `empty_extractions=0
+truncated_calls=0`. Graded with `check_extraction` (Level-1 only, $0):
+
+**Golden recall: 8/11 → 11/11 (100%), golden-precision 100%, found=11 mismatch=0 missing=0.**
+
+All three re-record-gated facts landed — **including the two flagged "stretch":**
+- ✓ `slack-crm-cutover-june` — re-subjected from `HelixPay` to `CRM migration` with predicate
+  `completion_target` (the projected likely win).
+- ✓ `pdf-boarddeck-confluence-q3` — the prompt produced the clean human value `end of Q3 2026`
+  on `Project Confluence` / `ga_target` (the value-phrasing risk did NOT bite — stretch won).
+- ✓ `code-core-top-contributor` — emitted `(helixpay/core, top_contributor, Sara Wijaya)` with
+  the correct direction (repo=subject, person=value).
+
+Plus the $0 Açaí win and the 7 already-found facts. **Zero false attributions (mismatch=0,
+precision 100%).** This clears the 0.80 `/goal` recall bar with margin.
+
+Caveat (honest): LLM extraction has run-to-run variance — this is one measured re-record at
+11/11; the prompt makes these facts reliably extractable, but a future re-record could vary by a
+fact. The deterministic substrate (Açaí seed, vocab, repair-gate guard) is stable; the three
+re-record facts depend on the (now committed) prompt.
+
+## The honest gate to ≥80% (operator-approved paid re-record) — CLEARED
 
 Reaching the 0.80 bar (≥9/11) requires one **paid re-record** of the 9 smoke docs with the new
 SP_019 prompt (Sonnet extract + Voyage embed, no Opus — minutes, a few US cents). The prompt is
