@@ -1,0 +1,1 @@
+{"contradictions": [{"a": 4, "b": 6, "block": "claim", "kind": "value_conflict", "rationale": "C4 states totals tie out with no financial loss while C6 states reconciliation reports do not tie out at month-end \u2014 directly incompatible descriptions of whether the numbers reconcile"}]}

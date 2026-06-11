@@ -1,0 +1,1 @@
+{"contradictions": [{"a": 2, "b": 5, "block": "link", "kind": "source_disagreement", "rationale": "as of 2026-04-15, one source says reports_to entity#1 and another says reports_to entity#4"}, {"a": 3, "b": 5, "block": "link", "kind": "source_disagreement", "rationale": "overlapping period around 2026-04-15/16, one source says reports_to entity#2 and another says entity#4"}]}

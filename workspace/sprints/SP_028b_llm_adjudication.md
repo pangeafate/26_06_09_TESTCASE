@@ -8,7 +8,7 @@ user_stories:
   - "As the operator, the paid pass is a single explicit, gated CLI step with a --dry-run that prints cluster counts and the estimated number of LLM calls before any money is spent; and if the LLM is unavailable or drops a cluster, that cluster falls back to the SP_028a deterministic verdict so a real conflict is never lost."
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_028b-llm-adjudication
 worktree: ""
@@ -328,4 +328,19 @@ construction.
 - **Stage 6 (documentation)** 2026-06-11 — CLAUDE.md gotcha appended (the SP_028b paid-refiner
   contract: two blocks, content cache + version-bump discipline, fallback arbitration, shared
   DedupWriter, print-only dry-run, MAX_CLUSTER cap, synthetic prompt). Sprint frontmatter reconciled
-  (touches_paths +dedup.py +recompute_contradictions.py).
+  (touches_paths +dedup.py +recompute_contradictions.py); USER_STORIES.md US-9 added. Validators:
+  validate_sprint full-gate PASS, doc_reality/doc_freshness PASS. (Pre-existing non-blockers:
+  `validate_workspace` flags CLAUDE.md > 20k — HEAD was already 23.2k, SP_024/025-deferred gotcha
+  archival; the dev-gateway `python-tests` step uses system python3 which lacks `bs4` — the
+  authoritative `uv run pytest` gate passes 762.)
+- **Stage 7 (deploy)** 2026-06-11 — **branch-only** per operator (main is 99 commits behind and
+  carries the HELD SP_024/025; not merged). Code pushed to
+  `origin/sprint/SP_028b-llm-adjudication` (commits `ae809b3`, `227bc8b`). **Paid data sweep** run
+  on the live `helixpay_full` with **Sonnet** (operator chose Sonnet over Opus for cost; the model
+  rides in the cache key): 305 subjects → 164 clusters → **17 LLM-confirmed rows + 50 floor rows +
+  5 capped → contradictions 115 → 67 (−42% precision)**. Oracle recall **1/8 → 2/8**: the
+  cross-predicate `maria-santos-dual-line` (link↔link) is now caught — the genuine recall the
+  same-predicate comparator structurally cannot see — with the `confluence-ga-target` baseline floor
+  preserved (ratchet held). 164 verdict files cached; a re-sweep dry-run reports
+  `estimated_llm_calls: 0` (content cache → $0 reproducibility verified). The remaining 6 oracle
+  misses are entity-fragmented (bug-ticket `hxloy487`, etc.) → SP_029 (entity-merge), out of scope.

@@ -1,0 +1,1 @@
+{"contradictions": [{"a": 5, "b": 6, "block": "claim", "kind": "temporal", "rationale": "C5 sets expected close date as end of April 2026 (~April 30) while C6 sets it to May 12, 2026 \u2014 two different dates from two different source snapshots"}]}
