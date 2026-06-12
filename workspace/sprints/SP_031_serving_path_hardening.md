@@ -148,9 +148,17 @@ per-`ask()` cache, not a frozen-contract change** (adding `resolve_entities` to 
   `HelixQueryEngine`** (Stage-3 architect finding): an instance-level memo on a long-lived
   engine would leak a stale `None`/entity across requests after a concurrent ingest —
   turning a safe per-request memo into a correctness bug. Pass the dict into
-  `_resolve_subjects` (or build it in `ask()` and thread it through). Key on the **raw term
-  string** as passed by `_resolve_subjects` (the repo normalizes internally), so the memo
-  collapses exactly what `resolve_entity` already treats as the same lookup.
+  `_resolve_subjects` (or build it in `ask()` and thread it through).
+- **HONEST SCOPE (verified during impl):** `_candidate_terms` already dedups terms
+  *case-sensitively* (`dict.fromkeys`) and `_WORD_RE` preserves case, so the memo's real
+  guarantee is **"≤1 `resolve_entity` call per _distinct normalized_ term"** — it collapses
+  only **case/whitespace variants** that map to the same lookup (e.g. "Revenue" vs
+  "revenue"). It does **NOT** collapse the dominant cost of many *distinct* real names; the
+  true 40→1 batch collapse needs a frozen-contract `resolve_entities(terms)`, which is
+  **Foundational and explicitly deferred** (propose-don't-fork). Key the memo on
+  `term.strip().lower()` to match `resolve_entity`'s internal normalization. I4 is therefore
+  a correctness-safe redundant-lookup dedup, not a headline N+1 elimination — recorded
+  truthfully so a later sprint knows the batch method is still owed.
 - **TDD (local):** `test/unit/query/test_engine_branches.py` — a counting subclass of
   `FakeRepository` asserts (1) a question with a repeated term calls `resolve_entity` once
   per *distinct* term, not once per occurrence; (2) a cached `None` (ambiguous bare name)
