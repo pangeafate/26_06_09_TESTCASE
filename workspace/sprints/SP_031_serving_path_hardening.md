@@ -43,6 +43,15 @@ touches_checklist_items: [gateway-project-python, gateway-interpreter-test, repo
 > 15-entry gateway bypass log at its root cause, and resolves the three pre-existing
 > `db`-test failures SP_030's gate newly exposed (currently `xfail`).
 
+## Sprint Goal
+
+Pay down the five verified production-code smells the TTD review surfaced, retire the
+15-entry gateway bypass log at its root cause (the gateway must run the project
+interpreter), add the DB-free unit branch coverage of `ask()` that the SP_030 `db`-gate
+cannot fill, make the 80% coverage gate real by combining the two CI jobs, and resolve the
+three pre-existing `xfail`ed `db` failures — all landing on the SP_030 integration gate as
+their safety net, with **no schema and no frozen-contract surface change**.
+
 ## Corrections folded in (from the post-SP_030 re-assessment)
 
 The original Tier-1/2/3 improvement list was written against pre-SP_030 numbers and is
@@ -90,7 +99,19 @@ This build env has **no local Docker / Postgres**. Items that exercise real SQL
 
 ---
 
-## Items
+## Scope
+
+In scope (one checklist item group each): I1 gateway project-interpreter; I2 assert→raise
+(6 sites); I3 CTE docstring fixes; I4 N+1 per-`ask()` resolve cache; I5 `_org_root_id` SQL
+compose; I6/D1 audit layer-break accept-and-document; I7 DB-free `ask()` branch tests; I8
+combined two-job coverage gate; I9 three xfail resolutions; I10 FakeRepo-dedup documented
+decision (no churn); I11 Hypothesis property tests (stretch, only if dep already present).
+
+Out of scope: any schema change; any frozen `Repository`/`QueryEngine` Protocol **surface**
+change (the N+1 fix is a cache, not a new method — D2); adding a `hypothesis` dependency;
+touching the sibling agent's untracked work.
+
+## Technical Approach
 
 ### I1 — Gateway runs the project interpreter (retires the bypass log at root cause)
 **Smell #0 / highest ROI.** `scripts/dev-gateway.py` shells `sys.executable` for every
@@ -183,19 +204,37 @@ avoid adding a dependency inside a Standard sprint (would itself need the full l
 
 ---
 
-## Pre-Implementation Review (Stage 3 — Standard floor: ≥2 iterations)
+## Testing Strategy
+
+TDD per `practices/GL-TDD.md`. Split by what the no-local-DB env can verify:
+
+- **DB-free, TDD'd and run locally before push** (failing test first): I1 gateway
+  interpreter (`test_dev_gateway_interpreter.py`); I4 N+1 cache + I7 `ask()` branches
+  (`test/unit/query/test_engine_branches.py`, all on `query/fakes.py:FakeRepository` — a
+  counting fake asserts the cache collapses duplicate-term lookups; the four branch tests
+  assert multi-entity / temporal / org-subtree / synthesis-failure behavior).
+- **CI `integration`-job-verified** (real `pgvector/pgvector:pg16`, cannot run locally):
+  I2 assert→raise and I5 SQL-compose are behavior-preserving and exercised by the existing
+  db suite; I9 removes the three `xfail`s so the formerly-skipped tests must now pass green.
+- **Non-code**: I3 docstring + I6/D1 audit-layer comment + I10 are doc/decision-only (no
+  test); I8 is CI/config wiring validated by a green combined-coverage run.
+
+Gate: `uv run pytest test` (DB-free subset locally) + `uv run mypy helixpay` clean + the
+dev-gateway runs to completion **without a bypass**; full `db` suite green in CI.
+
+### Pre-Implementation Review (Stage 3 — Standard floor: ≥2 iterations)
 
 - **Iteration 1** — Reviewer: architect-review agent (plan-blind to authorship). Severity: HIGH. Files reviewed: workspace/sprints/SP_031_serving_path_hardening.md, helixpay/query/engine.py, helixpay/db/repository.py, helixpay/audit/run.py, scripts/dev-gateway.py.
   _(to be filled at review time — focus: does the per-ask cache (D2) stay inside the frozen contract; is accept-and-document (D1) the right call vs a Protocol change; is D3 fixing the test the right side of the org-chart `as_of` ambiguity)_
 - **Iteration 2** — Reviewer: code-review agent (independent). Severity: MEDIUM. Files reviewed: scripts/dev-gateway.py, test/unit/query/test_engine_branches.py, .github/workflows/dev-rules-ci.yml, .validators.yml.
   _(to be filled — focus: gateway interpreter precedence correctness; coverage-combine wiring across two CI jobs; no unit job regression from require_report flip)_
 
-## Post-Implementation Review (Stage 5 — plan-blind, code+tests only)
+### Post-Implementation Review (Stage 5 — plan-blind, code+tests only)
 
 - **Iteration 1** — Reviewer: code-review agent (sees only diff + tests, never this plan). Severity: TBD. Files reviewed: (all touches_paths).
   _(to be filled after tests pass; verify any CRITICAL against runtime/CI evidence per Core Rule 5)_
 
-## Acceptance
+## Success Criteria
 
 - DB-free locally: `_project_python` test, `ask()` branch tests, N+1 cache test green;
   `uv run mypy helixpay` clean; **the dev-gateway now runs to completion without a bypass.**
