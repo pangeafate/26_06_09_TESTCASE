@@ -112,9 +112,16 @@ def test_get_entity_tool_returns_seeded_claims(mcp_real):
 
 def test_find_contradictions_tool_finds_revenue_conflict(mcp_real):
     raw = _call(mcp_real, "find_contradictions", {"topic": "revenue"})
-    # The tool returns a bare list; FastMCP wraps a non-object return as {"result": [...]}.
-    found = raw["result"] if isinstance(raw, dict) and "result" in raw else raw
-    assert any(c["predicate"] == "revenue" and c["kind"] == "value_conflict" for c in found)
+    # The tool returns a bare list; FastMCP must wrap a non-object return under a single
+    # object key (structured content must be an object). Unwrap to the contained list
+    # regardless of the key name; use .get() so a shape surprise is a clean assert, not a crash.
+    if isinstance(raw, dict):
+        lists = [v for v in raw.values() if isinstance(v, list)]
+        raw = lists[0] if lists else [raw]
+    items = [c for c in raw if isinstance(c, dict)]
+    assert any(
+        c.get("predicate") == "revenue" and c.get("kind") == "value_conflict" for c in items
+    )
 
 
 # --- the 8 optional retrieval tools: real engine → available:true ------------- #
