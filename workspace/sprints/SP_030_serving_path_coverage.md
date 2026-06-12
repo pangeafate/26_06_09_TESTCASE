@@ -5,7 +5,7 @@ features: [ci-db-integration-gate, fake-real-conformance, serving-path-coverage,
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_030-serving-path-coverage
 worktree: ""
@@ -450,8 +450,14 @@ addressed in the follow-up commit:
   **visible in CI output, not hidden by skip** — and folded into SP_031. This is the
   gate doing its job: it converted ~20 sprints of invisible skip-rot into tracked debt.
 
-Behavioral closure now depends on CI run #2 (the re-pushed fix) going green with the db
-suite running for real. The require-db guard still guarantees a DB misconfig fails loud.
+**Behavioral closure: ACHIEVED.** CI run 27394399507 (PR #4) is GREEN on both jobs:
+`gateway` (DB-free unit suite) PASS, and `integration` (the new serving-path gate) PASS
+with **72 passed, 3 xfailed, 1 skipped, 815 deselected** — the real
+`MCP dispatch → HelixQueryEngine → PostgresRepository` path now runs against pgvector on
+every PR to main, and `deploy.yml` (which `workflow_call`s this workflow) gates on it.
+The 49 perpetually-skipped serving-path tests are real gates; the require-db guard makes
+a DB misconfig fail loud. PR #4 is green and ready; **merge to production main is left for
+operator sign-off** (the project's standing pattern for main pushes).
 
 ## Hand-off
 

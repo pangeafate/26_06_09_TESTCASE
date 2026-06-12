@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-13
+last-reconciled: 2026-06-12
 authoritative-for: [features]
 ---
 
