@@ -10,9 +10,17 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_028b
-**Started:** 2026-06-11
-**Stage:** Complete — LLM contradiction adjudication (paid refiner on the SP_028a deterministic sweep). Deploy gated; live full-corpus re-record/verify pending operator.
+**Current:** SP_030
+**Started:** 2026-06-12
+**Stage:** Complete — serving-path test/CI hardening. **CI GREEN on PR #4** (run 27394399507):
+a DB-free `gateway` job (unit suite) + a new `integration` job that runs the db suite against
+pgvector (72 passed, 3 xfailed, 1 skipped). The real `MCP dispatch → HelixQueryEngine →
+PostgresRepository` path now runs on every PR + gates deploy; a fail-loud `HELIXPAY_REQUIRE_DB`
+guard kills silent skips. Also: fake↔real repository conformance, MCP-tools-e2e, owner-cited
+redundancy cleanup, `validate_tdd` auto-detect + advisory mirror-map. The gate immediately
+exposed 3 pre-existing db-test failures (silently skipped ~20 sprints) → xfailed + tracked for
+SP_031. No production `helixpay/` changes. **Merge to main left for operator.** Follow-on SP_031
+(5 production serving-path smells + the 3 xfailed tests) sequenced after.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 

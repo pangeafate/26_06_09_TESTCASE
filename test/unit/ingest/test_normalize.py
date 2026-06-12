@@ -63,6 +63,10 @@ def test_quarter_labels_compare_as_text():
 
 def test_version_string_not_numeric():
     assert normalize_value("version 2.1")[1] is None
+    # abbreviated v-prefix form (no space) must also stay non-numeric — owns the case
+    # the removed test_contradict.py::test_normalize_value_refuses_to_pull_digits_from_labels
+    # used to pin (SP_030 Item 4 owner-consolidation).
+    assert normalize_value("v1.0")[1] is None
     assert values_conflict("version 2.1", "version 2.0") is True
 
 

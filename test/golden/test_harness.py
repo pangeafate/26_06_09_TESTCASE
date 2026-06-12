@@ -27,7 +27,6 @@ from eval.run import (
     check_extraction,
     evaluate_check,
     goal_verdict,
-    normalize_value,
 )
 
 
@@ -91,21 +90,11 @@ class StubEngine:
         return self._bundle
 
 
-# --------------------------------------------------------------------------- #
-# normalize_value                                                             #
-# --------------------------------------------------------------------------- #
-@pytest.mark.parametrize(
-    "a,b",
-    [
-        ("SGD 14.2M", "14.2M"),
-        ("SGD 14.2M", "$14.2 million"),
-        ("R$22.0M", "22.0m"),
-        ("412", "412"),
-    ],
-)
-def test_normalize_value_matches_equivalent_forms(a, b):
-    na, nb = normalize_value(a), normalize_value(b)
-    assert na in nb or nb in na
+# NOTE: value-equivalence matching (``SGD 14.2M`` ≡ ``$14.2 million`` etc.) is owned —
+# more thoroughly — by ``test/golden/test_rigor.py`` (``_values_match``: adds unicode-minus,
+# commas, percent, mismatch rejection, and substring-false-positive guards). The former
+# ``test_normalize_value_matches_equivalent_forms`` here was a weaker substring subset;
+# removed in SP_030 Item 4.
 
 
 # --------------------------------------------------------------------------- #

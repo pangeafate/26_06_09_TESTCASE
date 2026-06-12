@@ -12,6 +12,11 @@ on:
   workflow_call:
 
 jobs:
+  # Unit + non-DB suite via the local dev-gateway. DELIBERATELY DB-free: with no
+  # DATABASE_URL the `db` integration tests skip AND the FastAPI app wires the
+  # MockQueryEngine (helixpay.api.app.wire_engine gates on DATABASE_URL), which is
+  # what the unit REST/MCP transport tests assume. The real-DB serving path runs in
+  # the separate `integration` job below. (SP_030)
   gateway:
     runs-on: ubuntu-latest
 
@@ -76,3 +81,52 @@ jobs:
             echo "No local gateway or validators found."
             exit 1
           fi
+
+  # The REAL serving-path gate (SP_030): runs ONLY the `db`-marked tests against a real
+  # pgvector, so the MCP dispatch → HelixQueryEngine → PostgresRepository path that the
+  # FakeRepository unit suite could only approximate is exercised for real. Scoped to
+  # `-m db` so the unit REST/MCP transport tests (which assume the mock engine) do NOT
+  # run here with DATABASE_URL set. HELIXPAY_REQUIRE_DB makes an absent/misconfigured DB
+  # a loud failure (test/conftest.py) rather than a silent skip of the whole suite.
+  integration:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      HELIXPAY_REQUIRE_DB: "1"
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        # POSTGRES_USER is intentionally omitted — the image defaults it to `postgres`,
+        # matching the user in DATABASE_URL above.
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync Python dependencies (uv)
+        run: uv sync --extra dev
+
+      - name: Run the db-marked serving-path suite against pgvector
+        # -m db selects every db-marked test across the tree: the integration suites,
+        # the conformance real-half, and the MCP-tools-e2e file. The pg_repo fixture
+        # self-runs apply_schema (CREATE EXTENSION vector + schema), so no separate
+        # migrate/seed step is needed.
+        run: uv run pytest test -m db -p no:cacheprovider -q

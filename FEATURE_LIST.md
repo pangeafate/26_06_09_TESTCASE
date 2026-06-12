@@ -55,3 +55,13 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned (owning agent in pare
 | Consensus/dissent rollup: collapse N coexisting claims to one ranked consensus + explicit dissent (`consensus-dissent`) | ✅ | `helixpay/query/consensus.py` (SP_012) |
 | Type contradictions (`value`/`temporal`/`source disagreement`/`relationship`) into the synthesis prompt, incl. link conflicts (`contradiction-typing`) | ✅ | `helixpay/query/contradictions.py`, `synthesis.py` (SP_012) |
 | Verbatim-span citations: `Citation.snippet` quotes `Claim.evidence` (`verbatim-citations`) | ✅ | `helixpay/query/synthesis.py` (SP_012) |
+
+## Round 4 — serving-path test/CI hardening (SP_030)
+
+| Feature | Status | Source |
+|---------|--------|--------|
+| CI provisions pgvector + runs the db integration suite; fail-loud `HELIXPAY_REQUIRE_DB` guard so the serving path can't stay green-by-skipping (`ci-db-integration-gate`) | ✅ | `.github/workflows/dev-rules-ci.yml`, `test/conftest.py` (SP_030) |
+| Fake↔real repository conformance: query reads asserted against both `FakeRepository` and `PostgresRepository` so the fake can't drift (`fake-real-conformance`) | ✅ | `test/unit/query/test_repository_conformance.py` (SP_030) |
+| Serving-path backfill: 12 MCP tools driven through the real `HelixQueryEngine`→`PostgresRepository` + synth-degrade/search-fetch branches (`serving-path-coverage`) | ✅ | `test/integration/db/test_mcp_tools_integration.py`, `test/integration/query/test_query_integration.py` (SP_030) |
+| Seam redundancy removal: owner-cited deletion of normalize-duplicate + trivial tests (`seam-redundancy-removal`) | ✅ | `test/unit/ingest/test_contradict.py`, `test/golden/test_harness.py`, `test/unit/ingest/test_schemas.py` (SP_030) |
+| TDD gate-wiring: `validate_tdd` auto-detects `helixpay` + layout-tolerant advisory mirror-map (`tdd-gate-wiring`) | ✅ | `validators/validate_tdd.py`, `.validators.yml` (SP_030) |
