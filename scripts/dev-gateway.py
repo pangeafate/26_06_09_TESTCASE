@@ -189,8 +189,29 @@ def _configured_steps(config: dict, stage: str, default: tuple[str, ...]) -> tup
     return tuple(str(item) for item in value)
 
 
+def _project_python(project_root: Path) -> str:
+    """Resolve the interpreter for child Python steps (SP_031 I1).
+
+    Precedence: an active ``$VIRTUAL_ENV`` → a sibling ``<root>/.venv`` → the
+    interpreter running this gateway. Path-existence is the gate (a real import
+    probe would cost a subprocess); the venv is created by ``uv sync --extra dev``
+    before the gateway runs. This retires the gateway-bypass root cause: child
+    validators/pytest no longer inherit a system ``python3`` lacking ``bs4``/``psycopg``.
+    """
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        cand = Path(venv) / "bin" / "python"
+        if cand.is_file():
+            return str(cand)
+    local = project_root / ".venv" / "bin" / "python"
+    if local.is_file():
+        return str(local)
+    return sys.executable
+
+
 def _available_steps(project_root: Path, config: dict) -> dict[str, Step]:
     scripts = _package_scripts(project_root)
+    py = _project_python(project_root)
     steps: dict[str, Step] = {}
 
     if "typecheck" in scripts:
@@ -214,9 +235,9 @@ def _available_steps(project_root: Path, config: dict) -> dict[str, Step]:
 
     if _has_python_tests(project_root):
         if _declares_pytest(project_root):
-            cmd = [sys.executable, "-m", "pytest", "-q"]
+            cmd = [py, "-m", "pytest", "-q"]
         else:
-            cmd = [sys.executable, "-m", "unittest", "discover", "-p", "test_*.py", "-v"]
+            cmd = [py, "-m", "unittest", "discover", "-p", "test_*.py", "-v"]
         steps["python-tests"] = Step(
             "python-tests",
             cmd,
@@ -235,7 +256,7 @@ def _available_steps(project_root: Path, config: dict) -> dict[str, Step]:
     if module_size.is_file():
         steps["module-size"] = Step(
             "module-size",
-            [sys.executable, "validators/validate_module_size.py", "."],
+            [py, "validators/validate_module_size.py", "."],
             _step_timeout(config, "module-size", 120),
         )
 
@@ -243,7 +264,7 @@ def _available_steps(project_root: Path, config: dict) -> dict[str, Step]:
     if run_all.is_file():
         steps["validators"] = Step(
             "validators",
-            [sys.executable, "validators/run_all.py", "."],
+            [py, "validators/run_all.py", "."],
             _step_timeout(config, "validators", 300),
         )
 

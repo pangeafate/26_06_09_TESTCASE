@@ -134,10 +134,6 @@ def test_predicates_are_stable_keys(oracle):
 # seeded corpus DB; against an empty CI pgvector it errors (relation "contradictions"
 # does not exist) instead of skipping gracefully. SP_031 makes it empty-DB-safe (skip
 # when unbuilt) or seeds a CI corpus.
-@pytest.mark.xfail(
-    reason="SP_031: live-detector ratchet needs a pre-seeded corpus; errors on empty CI DB",
-    strict=False,
-)
 @pytest.mark.db
 def test_live_detector_meets_baseline(oracle, db_url):
     """Score the oracle against whatever the live DB materialized. Skip an UNBUILT DB (nothing
@@ -149,6 +145,13 @@ def test_live_detector_meets_baseline(oracle, db_url):
     conn = connect(db_url)
     try:
         repo = PostgresRepository(conn)
+        # SP_031/D4: an empty CI DB may have NO schema applied — `get_contradictions` would
+        # raise `relation "contradictions" does not exist` (which also aborts the txn). Guard
+        # the missing-relation case first; `to_regclass` returns NULL (never raises) when absent.
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.contradictions') AS t")
+            if cur.fetchone()["t"] is None:
+                pytest.skip("contradictions relation absent — schema not applied, nothing to score")
         if not repo.get_contradictions(None):
             pytest.skip("DB has no contradictions — KB not built, nothing to score")
         report = score(repo, oracle)

@@ -149,18 +149,28 @@ def test_contradiction_pair_dedups_regardless_of_order(pg_repo):
 # SP_030: pre-existing failure exposed when CI first ran the db suite. Seeded edges are
 # UNDATED (as_of=None, SP_011) so an early as_of does not filter them — stale expectation
 # or a real get_org_subtree as_of bug; resolved in SP_031.
-@pytest.mark.xfail(
-    reason="SP_031: undated seeded edges (SP_011) not excluded by an early as_of",
-    strict=False,
-)
 def test_org_subtree_as_of_filters_reporting_lines(pg_repo):
+    # SP_031/D3: pins BOTH sides of the as_of filter so coverage isn't lost.
     seed_all(pg_repo, DATA, with_fixture=False)
-    # a date before the org-chart export has no valid reporting lines → empty root
-    early = pg_repo.get_org_subtree(as_of=date(2026, 1, 1))
-    assert early["children"] == []
-    # at/after the export date the tree is populated
+    # (1) at/after the export date the seeded tree is populated …
     current = pg_repo.get_org_subtree(as_of=date(2026, 4, 15))
     assert current["name"] == "Wei Chen" and current["children"]
+    # … and an UNDATED seeded edge (as_of=None per SP_011) has no lower bound, so it
+    # persists even under an early as_of — it is NOT filtered (the corrected expectation).
+    early = pg_repo.get_org_subtree(as_of=date(2026, 1, 1))
+    assert early["children"], "undated seeded edges must persist under an early as_of"
+
+    # (2) a genuinely DATED edge IS filtered by as_of. Build an isolated reporting line
+    # (Sub reports_to Mgr, dated 2026-05-01) off to the side and query it by explicit root.
+    mgr = pg_repo.upsert_entity(Entity(canonical_name="Dated Mgr", entity_type="person"))
+    sub = pg_repo.upsert_entity(Entity(canonical_name="Dated Sub", entity_type="person"))
+    pg_repo.add_link(
+        Link(from_entity_id=sub, to_entity_id=mgr, link_type="reports_to", as_of=date(2026, 5, 1))
+    )
+    before = pg_repo.get_org_subtree(root_id=mgr, as_of=date(2026, 4, 15))
+    assert before["children"] == [], "a dated edge must be filtered out before its as_of"
+    after = pg_repo.get_org_subtree(root_id=mgr, as_of=date(2026, 6, 1))
+    assert [c["entity_id"] for c in after["children"]] == [sub], "dated edge visible at/after as_of"
 
 
 def test_fixture_contradiction_is_queryable(pg_repo):

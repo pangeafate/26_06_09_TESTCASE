@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-12
+last-reconciled: 2026-06-13
 authoritative-for: [features]
 ---
 
@@ -65,3 +65,17 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned (owning agent in pare
 | Serving-path backfill: 12 MCP tools driven through the real `HelixQueryEngine`→`PostgresRepository` + synth-degrade/search-fetch branches (`serving-path-coverage`) | ✅ | `test/integration/db/test_mcp_tools_integration.py`, `test/integration/query/test_query_integration.py` (SP_030) |
 | Seam redundancy removal: owner-cited deletion of normalize-duplicate + trivial tests (`seam-redundancy-removal`) | ✅ | `test/unit/ingest/test_contradict.py`, `test/golden/test_harness.py`, `test/unit/ingest/test_schemas.py` (SP_030) |
 | TDD gate-wiring: `validate_tdd` auto-detects `helixpay` + layout-tolerant advisory mirror-map (`tdd-gate-wiring`) | ✅ | `validators/validate_tdd.py`, `.validators.yml` (SP_030) |
+
+## Round 5 — serving-path production hardening (SP_031)
+
+| Feature | Status | Source |
+|---------|--------|--------|
+| Gateway runs the project interpreter (`$VIRTUAL_ENV`→`.venv`→`sys.executable`) — retires the bypass-log root cause (`gateway-project-interpreter`) | ✅ | `scripts/dev-gateway.py`, `test/unit/scripts/test_dev_gateway_interpreter.py` (SP_031) |
+| Infra post-conditions `raise` not `assert` (survive `python -O`) (`assert-to-raise-guards`) | ✅ | `helixpay/db/repository.py`, `helixpay/db/audit_queries.py` (SP_031) |
+| Fresh per-`ask()` `resolve_entity` memo (variant-dedup; true N+1 = deferred frozen `resolve_entities`) (`n1-resolve-cache`) | ✅ | `helixpay/query/engine.py`, `test/unit/query/test_engine_branches.py` (SP_031) |
+| Corrected "recursive CTE" docstrings (org subtree is Python-side) (`cte-docstring-fix`) | ✅ | `helixpay/contracts/{models,repository}.py` (SP_031) |
+| `_org_root_id` f-string SQL → shared `_as_of_filter` (fragment, params) helper (`org-root-sql-compose`) | ✅ | `helixpay/db/repository.py` (SP_031) |
+| Audit→`db.audit_queries` layer-break accepted-and-documented (read-only + census invariants) (`audit-layer-doc`) | ✅ | `helixpay/audit/run.py` (SP_031) |
+| DB-free `ask()` branch coverage (multi-entity / route / contradictions / synth-fail / org-chart) (`ask-branch-unit-coverage`) | ✅ | `test/unit/query/test_engine_branches.py` (SP_031) |
+| Advisory combined two-job coverage report; enforcing `require_report` flip deferred until ≥80% (`combined-coverage-gate`) | ✅ | `.github/workflows/dev-rules-ci.yml` (SP_031) |
+| Resolved 3 pre-existing xfailed db tests (org-`as_of` expectations; live-detector missing-relation guard) (`xfail-debt-resolution`) | ✅ | `test/integration/db/test_repository_integration.py`, `test/integration/query/test_query_integration.py`, `test/golden/test_contradiction_recall.py` (SP_031) |

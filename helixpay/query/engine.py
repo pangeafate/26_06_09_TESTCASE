@@ -97,8 +97,12 @@ class HelixQueryEngine:
 
         terms = self._candidate_terms(question)
         subjects: list["Entity"] = []
+        # Fresh per-ask() memo (NOT an instance attribute — an engine-level cache would
+        # leak a stale None/entity across requests after an ingest). Collapses redundant
+        # resolve_entity lookups for case/whitespace-variant terms within this call.
+        resolve_memo: dict[str, Optional["Entity"]] = {}
         if plan.route in (Route.structured, Route.both):
-            subjects = self._resolve_subjects(terms)
+            subjects = self._resolve_subjects(terms, resolve_memo)
         subject_ids = [s.id for s in subjects if s.id is not None]
 
         # contradictions are first-class — gather (by subject AND by canonicalized
@@ -414,14 +418,31 @@ class HelixQueryEngine:
         )
         return terms[:_MAX_TERMS]
 
-    def _resolve_subjects(self, terms: list[str]) -> list["Entity"]:
+    def _resolve_subjects(
+        self, terms: list[str], memo: dict[str, Optional["Entity"]]
+    ) -> list["Entity"]:
         """Resolve candidate subject entities (roster-first, via the Repository).
         Ambiguous bare names resolve to None and are skipped — never a silent pick.
-        (Perf note / Protocol friction: one ``resolve_entity`` call per term; a
-        batched ``resolve_entities`` would collapse this hot loop.)"""
+
+        ``memo`` is the caller's fresh per-``ask()`` dict, keyed on the normalized term
+        (``strip().lower()`` — matching ``resolve_entity``'s own normalization). It
+        collapses redundant lookups for case/whitespace-variant terms (e.g. "Revenue" vs
+        "revenue") and caches the ``None`` miss so an ambiguous name is not re-queried.
+        NOTE: this dedups *variant* lookups only — the dominant cost of many *distinct*
+        names is not collapsed; a true batch ``resolve_entities`` would need a frozen
+        ``Repository`` Protocol change (deferred, propose-don't-fork).
+
+        The memo key is valid ONLY because this call site passes neither ``entity_type`` nor
+        ``context`` to ``resolve_entity``. If either is ever parameterized here, the key must
+        include them or two same-name lookups with different filters would collide."""
         found: dict[int, "Entity"] = {}
         for term in terms:
-            ent = self.repo.resolve_entity(term)
+            key = term.strip().lower()
+            if key in memo:
+                ent = memo[key]
+            else:
+                ent = self.repo.resolve_entity(term)
+                memo[key] = ent
             if ent is not None and ent.id is not None and ent.id not in found:
                 found[ent.id] = ent
             if len(found) >= _MAX_SUBJECTS:
