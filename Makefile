@@ -6,7 +6,34 @@
 COMPOSE := docker compose
 APP_RUN := $(COMPOSE) run --rm app
 
-.PHONY: up ingest ingest-record replay demo test fmt down logs ps
+# The committed full-corpus snapshot — the canonical state the live instance serves
+# (44 docs, 2347 claims, 67 contradictions). `make run` restores this at $0, no API keys.
+SNAPSHOT := workspace/snapshots/helixpay_full-67-20260612.dump
+
+.PHONY: run _env up restore ingest ingest-record replay recompute demo test fmt down logs ps
+
+## run: ONE command from a fresh clone — the full 44-doc ontology at $0, no API keys.
+## Bootstraps .env from the template if absent, brings up db+app, applies schema, then
+## restores the committed full-corpus snapshot (the same dump→restore path prod uses).
+## Fully key-free and $0 — no LLM, no embeddings. Only live `ask`/synthesis needs a real
+## ANTHROPIC_API_KEY. (To re-run the genuine pipeline instead, see `make replay`.)
+run: _env up restore
+	@echo ""
+	@echo "HelixPay is up — full ontology restored (zero API spend, no LLM): 44 docs, 2347 claims, 67 contradictions."
+	@echo "  REST: http://127.0.0.1:8000      (POST /ask {\"question\": \"...\"} — needs a real ANTHROPIC_API_KEY)"
+	@echo "  MCP:  http://127.0.0.1:8000/mcp   (streamable-HTTP, 12 tools)"
+	@echo "  Inspect: docker compose exec db psql -U postgres -d helixpay -c 'select count(*) from claims;'"
+
+## _env: create .env from the template if missing (restore/replay need no real secrets)
+_env:
+	@test -f .env || { cp .env.example .env && echo "created .env from .env.example (restore needs no real keys)"; }
+
+## restore: load the committed full-corpus snapshot into the running db — $0, no API keys,
+## no LLM. The same pg_dump→pg_restore mechanism prod uses (scripts/prod_seed.sh). Requires
+## `make up` first (the migration creates the pgvector extension the dump's columns need).
+restore:
+	$(COMPOSE) exec -T db pg_restore --clean --if-exists --no-owner --no-acl -U postgres -d helixpay < $(SNAPSHOT)
+	@echo "restored $(SNAPSHOT)"
 
 ## up: build + start db & app, wait for db health, then migrate + seed (idempotent)
 up:
@@ -21,21 +48,30 @@ up:
 	$(APP_RUN) python -m helixpay.seed.run_seed
 
 ## ingest: idempotent ingestion over ./data inside the app container
+## ingest: idempotent ingestion over the corpus (root 'data' — matches the canonical
+## source_uri form in the replay cache and the live store; './data' would mismatch the key).
 ingest:
-	$(APP_RUN) helixpay ingest ./data
+	$(APP_RUN) helixpay ingest data
 
-## ingest-record: the one PAID extraction over ./data. Persists claims AND writes the
+## ingest-record: the one PAID extraction over the corpus. Persists claims AND writes the
 ## replay cache to ./.replay-cache (host-mounted so `replay` reuses it). Tier-1 cost.
 ingest-record:
 	$(COMPOSE) run --rm -v "$(PWD)/.replay-cache:/app/.replay-cache" app \
-		python -m helixpay.ingest.replay record ./data --cache-dir ./.replay-cache
+		python -m helixpay.ingest.replay record data --cache-dir ./.replay-cache
 
 ## replay: re-run resolve→canonicalize→persist→contradict from the cache with ZERO API
-## calls (no LLM, no embeddings). Needs a prior `ingest-record`; run `up` first to apply
-## new seeds/vocab. A prompt/chunking/document-content change requires a fresh record.
+## calls (no LLM, no embeddings). Needs the committed cache (or a prior `ingest-record`); run
+## `up` first to apply seeds/vocab. The cache key is the source_uri, so the root MUST be
+## 'data' (not './data') to match the recorded keys. A prompt/chunking/content change re-records.
 replay:
 	$(COMPOSE) run --rm -v "$(PWD)/.replay-cache:/app/.replay-cache" app \
-		python -m helixpay.ingest.replay replay ./data --cache-dir ./.replay-cache
+		python -m helixpay.ingest.replay replay data --cache-dir ./.replay-cache
+
+## recompute: deterministic, $0 contradiction precision sweep (clear-then-rewrite, no LLM).
+## Mounts scripts/ (excluded from the image) so the canonical post-ingest sweep is runnable.
+## The live instance additionally runs the cached LLM adjudication sweep (see SOLUTION.md §3).
+recompute:
+	$(COMPOSE) run --rm -v "$(PWD)/scripts:/app/scripts" app python scripts/recompute_contradictions.py
 
 ## demo: run the eval harness (Agent 6) against the running app. Runs as a module
 ## (`-m eval.run`) so `eval` is importable from /app, and mounts the host `test/`

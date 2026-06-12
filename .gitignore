@@ -38,3 +38,9 @@ DEV_RULES/
 # Agent-private git worktrees (DEV_REINFORCE F-6) and IDE settings — never tracked.
 .claude/worktrees/
 .idea/
+
+# Paid LLM adjudication cache — regeneratable, off the offline run/replay path.
+.adjudication-cache/
+# Postgres snapshots are regeneratable; keep ONLY the one make run restores.
+*.dump
+!workspace/snapshots/helixpay_full-67-20260612.dump

@@ -1,0 +1,1280 @@
+{
+  "ks": [
+    1,
+    3,
+    5,
+    8,
+    10,
+    20
+  ],
+  "n_bar_facts": 41,
+  "n_scored": 41,
+  "n_source_absent": 0,
+  "source_absent_ids": [],
+  "recall": {
+    "hybrid": {
+      "1": 0.341,
+      "3": 0.585,
+      "5": 0.659,
+      "8": 0.805,
+      "10": 0.829,
+      "20": 0.854
+    },
+    "semantic": {
+      "1": 0.317,
+      "3": 0.415,
+      "5": 0.512,
+      "8": 0.756,
+      "10": 0.829,
+      "20": 0.854
+    },
+    "lexical": {
+      "1": 0.293,
+      "3": 0.561,
+      "5": 0.585,
+      "8": 0.585,
+      "10": 0.585,
+      "20": 0.585
+    }
+  },
+  "retrieval_bound_misses": [
+    "md-weekly-q2-target",
+    "html-dashboard-revenue",
+    "html-dashboard-nps",
+    "html-dashboard-ebitda",
+    "html-dashboard-net-new-merchants",
+    "html-dashboard-brasil-revenue"
+  ],
+  "rows": [
+    {
+      "id": "md-overview-runway",
+      "status": "scored",
+      "query": "HelixPay runway",
+      "source_uri": "data/overview.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "md-overview-net-new-merchants",
+      "status": "scored",
+      "query": "HelixPay net_new_merchants",
+      "source_uri": "data/overview.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "md-allhands-confluence-june",
+      "status": "scored",
+      "query": "Project Confluence ga_target",
+      "source_uri": "data/all-hands-2026-04-15.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "md-boardupdate-confluence-q3",
+      "status": "scored",
+      "query": "Project Confluence ga_target",
+      "source_uri": "data/board-update-2026-04-22.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "md-boardupdate-churn",
+      "status": "scored",
+      "query": "HelixPay churn",
+      "source_uri": "data/board-update-2026-04-22.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "md-weekly-q2-target",
+      "status": "scored",
+      "query": "HelixPay revenue_target",
+      "source_uri": "data/weekly-review-2026-04-21.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "pdf-results-revenue",
+      "status": "scored",
+      "query": "HelixPay revenue",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "pdf-results-net-new-merchants",
+      "status": "scored",
+      "query": "HelixPay net_new_merchants",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "pdf-results-ebitda",
+      "status": "scored",
+      "query": "HelixPay ebitda",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "pdf-results-gross-margin",
+      "status": "scored",
+      "query": "HelixPay gross_margin",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "pdf-results-total-paid-merchants",
+      "status": "scored",
+      "query": "HelixPay total_paid_merchants",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "pdf-results-monthly-burn",
+      "status": "scored",
+      "query": "HelixPay monthly_burn",
+      "source_uri": "data/q1-2026-results.pdf",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "pdf-boarddeck-confluence-q3",
+      "status": "scored",
+      "query": "Project Confluence ga_target",
+      "source_uri": "data/board-deck-q1-2026.pdf",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-dashboard-revenue",
+      "status": "scored",
+      "query": "HelixPay revenue",
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-dashboard-nps",
+      "status": "scored",
+      "query": "HelixPay nps",
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-dashboard-ebitda",
+      "status": "scored",
+      "query": "HelixPay ebitda",
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-dashboard-net-new-merchants",
+      "status": "scored",
+      "query": "HelixPay net_new_merchants",
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-dashboard-brasil-revenue",
+      "status": "scored",
+      "query": "HelixPay Brasil revenue",
+      "source_uri": "data/dashboards/april-2026-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "html-q4-revenue",
+      "status": "scored",
+      "query": "HelixPay revenue",
+      "source_uri": "data/dashboards/q4-2025-kpi-dashboard.html",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "slack-crm-cutover-june",
+      "status": "scored",
+      "query": "CRM migration completion_target",
+      "source_uri": "data/chat/sales-floor-april.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "slack-april-mtd-revenue",
+      "status": "scored",
+      "query": "HelixPay april_mtd_revenue",
+      "source_uri": "data/chat/sales-floor-april.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "slack-confluence-internal-q3",
+      "status": "scored",
+      "query": "Project Confluence ga_target",
+      "source_uri": "data/chat/exec-huddle-april-week3.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "email-cosmos-owner",
+      "status": "scored",
+      "query": "Marcus Lee owns Cosmos Hotels",
+      "source_uri": "data/email/cosmos-hotels-debrief.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "email-acai-owner",
+      "status": "scored",
+      "query": "Maria Santos owns A\u00e7a\u00ed Express SP",
+      "source_uri": "data/email/customer-acai-express-thread.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "code-core-top-contributor",
+      "status": "scored",
+      "query": "helixpay/core top_contributor",
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "code-infra-top-contributor",
+      "status": "scored",
+      "query": "helixpay/platform-infra top_contributor",
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "code-posapp-top-contributor",
+      "status": "scored",
+      "query": "helixpay/pos-app top_contributor",
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "code-tan-wei-ming-commits",
+      "status": "scored",
+      "query": "Tan Wei Ming q1_commits",
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "code-daniel-tan-commits",
+      "status": "scored",
+      "query": "Daniel Tan q1_commits",
+      "source_uri": "data/code/contributors-analysis-q1-2026.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "interview-brasil-revenue",
+      "status": "scored",
+      "query": "HelixPay Brasil revenue",
+      "source_uri": "data/interviews/sales/maria-silva.md",
+      "hybrid": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "interview-daniel-confluence-ga",
+      "status": "scored",
+      "query": "Project Confluence ga_target",
+      "source_uri": "data/interviews/leadership/Daniel_Tan.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": false,
+        "20": false
+      }
+    },
+    {
+      "id": "interview-santos-role",
+      "status": "scored",
+      "query": "Maria Santos role",
+      "source_uri": "data/interviews/customer_success/Maria_Santos.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "silva-role",
+      "status": "scored",
+      "query": "Maria Silva role",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-daniel-reports-arjun",
+      "status": "scored",
+      "query": "Daniel Tan reports_to Arjun Kapoor",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-sara-reports-daniel",
+      "status": "scored",
+      "query": "Sara Wijaya reports_to Daniel Tan",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": false,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-arjun-reports-wei",
+      "status": "scored",
+      "query": "Arjun Kapoor reports_to Wei Chen",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-hannah-reports-priya",
+      "status": "scored",
+      "query": "Hannah Park reports_to Priya Raman",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-maria-silva-dotted-sofia",
+      "status": "scored",
+      "query": "Maria Silva dotted_line_to Sofia Almeida",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": false,
+        "5": false,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "org-headcount",
+      "status": "scored",
+      "query": "HelixPay headcount",
+      "source_uri": "data/org-chart.md",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "image-brasil-revenue-q1-2026",
+      "status": "scored",
+      "query": "HelixPay Brasil revenue",
+      "source_uri": "data/images/revenue-trend-q1-2026.jpeg",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    },
+    {
+      "id": "image-sea-revenue-q1-2026",
+      "status": "scored",
+      "query": "HelixPay SEA revenue",
+      "source_uri": "data/images/revenue-trend-q1-2026.jpeg",
+      "hybrid": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "semantic": {
+        "1": true,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      },
+      "lexical": {
+        "1": false,
+        "3": true,
+        "5": true,
+        "8": true,
+        "10": true,
+        "20": true
+      }
+    }
+  ]
+}

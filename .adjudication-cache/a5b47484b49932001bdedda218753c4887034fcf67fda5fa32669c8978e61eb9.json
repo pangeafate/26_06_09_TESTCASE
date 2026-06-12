@@ -1,1 +1,0 @@
-{"contradictions": [{"a": 3, "b": 6, "block": "link", "kind": "source_disagreement", "rationale": "both assert reports_to as of 2026-04-15 but point to different entities (#29 vs #5), implying two different solid-line managers at the same time"}]}
