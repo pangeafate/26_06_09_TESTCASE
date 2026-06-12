@@ -5,7 +5,7 @@ features: [gateway-project-interpreter, assert-to-raise-guards, n1-resolve-cache
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: Planned
+status: In Progress
 isolation: branch-only
 branch: sprint/SP_031-serving-path-hardening
 worktree: ""
