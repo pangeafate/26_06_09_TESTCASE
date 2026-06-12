@@ -117,7 +117,7 @@ def test_route_both_runs_retrieval_leg():
     _two_entity_world(repo)
     repo.semantic = [(Chunk(id=7, document_id=1, ordinal=0, text="Helix grew."), 0.9)]
     eng = _engine(repo)
-    eng.ask("What was Helix revenue?")  # proper noun + metric → route=both
+    eng.ask("What was Helix revenue?")  # metric question → route=both (planner)
     assert eng.last_trace["route"] == "both"
     assert eng.last_trace["retrieved_chunk_ids"] == [7]
 

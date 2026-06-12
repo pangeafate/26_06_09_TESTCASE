@@ -5,7 +5,7 @@ features: [gateway-project-interpreter, assert-to-raise-guards, n1-resolve-cache
 user_stories: []
 schema_touched: false
 structure_touched: false
-status: In Progress
+status: Complete
 isolation: branch-only
 branch: sprint/SP_031-serving-path-hardening
 worktree: ""
@@ -279,8 +279,13 @@ dev-gateway runs to completion **without a bypass**; full `db` suite green in CI
 
 ### Post-Implementation Review
 
-- **Iteration 1** — Reviewer: code-review agent (sees only diff + tests, never this plan). Severity: TBD. Files reviewed: (all touches_paths).
-  _(to be filled after tests pass; verify any CRITICAL against runtime/CI evidence per Core Rule 5)_
+- **Iteration 1** — Reviewer: code-review agent (plan-blind; saw only `git diff origin/main...HEAD` + tests). Severity: HIGH (verdict **SHIP**). Files reviewed: scripts/dev-gateway.py, helixpay/query/engine.py, helixpay/db/repository.py, helixpay/db/audit_queries.py, helixpay/contracts/{models,repository}.py, helixpay/audit/run.py, test/unit/query/test_engine_branches.py, test/unit/scripts/test_dev_gateway_interpreter.py, test/integration/db/test_repository_integration.py, test/integration/query/test_query_integration.py, test/golden/test_contradiction_recall.py, .github/workflows/dev-rules-ci.yml.
+  - **Verified correct:** the `_org_root_id` SQL refactor is semantically identical and the param count still matches (clause embedded 2× → `params + params` = 4 `%s`, equal to the old `[as_of]*4`); the resolution memo is genuinely per-call (a local in `ask()`, no cross-request leak) and caches `None` correctly; the assert→raise messages are accurate with no swallowed control flow; the xfail rewrites assert real behavior (the `before==[] / after` dated-edge pattern would fail on the old broken filter, not vacuously); the `coverage` job is correctly non-gating (`continue-on-error` at job level, outside `deploy`'s `needs` chain). No CRITICAL.
+  - **H1 (accepted with rationale, not actioned):** the integration job's db pytest carries `--cov` without `continue-on-error`, so a catastrophic `pytest-cov` plugin break could fail the gate. **Disposition:** keep the single run — `--cov-report=` with **no** `--cov-fail-under` means coverage cannot fail the run; real test failures still gate correctly (which is desired); a broken plugin would surface loudly and symmetrically in the gateway job. The reviewer's split-step fix would double the slow pg-service job every push — not worth the cost for a near-zero, lockfile-pinned risk. Tracked as an optional CI follow-up.
+  - **Actioned (cheap robustness):** M3 schema-qualified `to_regclass('public.contradictions')` (avoid a `search_path` false-skip); M1 docstring note that the memo key is valid only while `entity_type`/`context` are unset at the call site; S2 added `document_id`/`ordinal` to the `add_chunks` raise message. M2 (Windows `Scripts/python.exe`), M4 (audit-comment import placement), L1–L3/S1 accepted as-is for a darwin/linux project at this tier. Re-ran `mypy helixpay` (clean) + unit suite (758 passed) after the tweaks.
+- **Iteration 2** — Reviewer: architect-review agent (plan-blind; fresh second opinion on the final diff). Severity: LOW (verdict **SHIP**). Files reviewed: helixpay/query/engine.py, helixpay/db/repository.py, scripts/dev-gateway.py, .github/workflows/{dev-rules-ci,deploy}.yml, test/unit/query/test_engine_branches.py, test/unit/scripts/test_dev_gateway_interpreter.py, test/integration/db/test_repository_integration.py, test/golden/test_contradiction_recall.py.
+  - **Independently re-verified clean:** all new tests pass **non-vacuously** (the memo tests would have FAILED pre-memo — `_candidate_terms` dedups case-sensitively so "Revenue"/"revenue" both reach the repo without the memo; `test_memo_is_fresh_per_ask` proves per-call isolation since an instance memo would leave the 2nd call's `resolve_calls` empty); CI graph is deploy-safe (the `coverage` job is `continue-on-error` and outside `deploy`'s `needs: gateway` chain; artifact names match; `coverage combine` finds the downloaded data files; the real db gate still fails the build on a real test failure — `--cov` doesn't change pytest's exit code); `_resolve_subjects` has exactly one caller; `_as_of_filter` param count re-verified (2× clause → `params+params` = 4 placeholders); the rewritten xfail tests RUN (not skip) and genuinely exercise the dated-edge filter.
+  - **LOW (advisory, not blocking):** route-branch tests couple to the planner keyword lists (valid as a precondition guard; could drive `Plan` directly instead) and one imprecise comment → **fixed** ("metric question → route=both"). No CRITICAL/HIGH. **Process action honored:** committed the working-tree follow-up tweaks (M1/M3/S2) so they land in the branch, not just the working tree.
 
 ## Success Criteria
 
@@ -294,6 +299,31 @@ dev-gateway runs to completion **without a bypass**; full `db` suite green in CI
 - The I4 cache is **fresh-per-`ask()`** (test proves two `ask()` calls each re-resolve).
 - `CLAUDE.md` + `workspace/CLAUDE_GOTCHAS.md` carry the audit-layer (D1) gotcha.
 
+## Outcome
+
+Shipped I1–I9 (I10 documented-decision, I11 deferred). Two independent Stage-3 plan
+reviews (architect + code-review, both APPROVE-WITH-CHANGES) and one plan-blind Stage-5
+post-impl review (**SHIP**). DB-free verification local: `mypy helixpay` clean; **758 unit
+passed, 12 skipped**; the four new gateway-interpreter tests + nine `ask()`-branch/cache
+tests green. The DB-dependent edits (I2 assert→raise, I5 SQL-compose, I9 xfail removals) are
+left to the CI `integration` job against real `pgvector` — this sprint's safety net by design.
+
+**Measured coverage:** unit-half = **85%** locally (`pytest test/unit --cov=helixpay`). The
+CI combine job will report the union with the integration job; since the union is ≥ the
+unit-half, the combined number clears the 80% `validate_tdd` threshold comfortably — so the
+deferred `require_report: true` flip (below) is **low-risk** when a follow-up takes it.
+
 ## Hand-off
 
-_Pending implementation._
+Optional follow-ups (none blocking; HelixPay serving path is now branch-tested + gated):
+1. **Flip the coverage gate to enforcing** once CI prints the combined number ≥80%: set
+   `coverage.require_report: true` in `.validators.yml` (one line). The advisory `coverage`
+   job already produces `coverage.xml`; this just makes `validate_tdd` fail below threshold.
+2. **(post-impl H1, optional)** If CI infra ever changes, isolate the integration job's
+   `--cov` into a separate `continue-on-error` step so coverage bookkeeping can never affect
+   the real db gate. Near-zero risk today (`--cov-report=`, no `--cov-fail-under`,
+   lockfile-pinned `pytest-cov`).
+3. **The true N+1 (I4 honest scope):** a batched `Repository.resolve_entities(terms)` would
+   collapse the up-to-40 serial `resolve_entity` round-trips per `ask()` that the per-call
+   memo only dedups for *variant* terms. That's a **frozen-contract change → Foundational**;
+   propose, don't fork.

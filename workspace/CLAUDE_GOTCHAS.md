@@ -255,3 +255,58 @@ Append the verbose form here **and** the condensed line in `CLAUDE.md` whenever 
   precision is SP_028a/SP_028b's concern, not a pipeline bug). `confluence_ga_surfaces` and
   `two_marias_distinct` hold on both fixture and full corpus. `fetch_claim_rows` materializes the full
   claims table — fine for a bounded corpus, add a server-side cursor for 100k+.
+
+## SP_031 — serving-path production hardening (sequenced after the SP_030 CI gate)
+
+- **dev-gateway project interpreter (I1):** `scripts/dev-gateway.py:_project_python(root)` resolves
+  the interpreter for every Python child step (pytest, validators) with precedence
+  `$VIRTUAL_ENV/bin/python` → `<root>/.venv/bin/python` → `sys.executable`. The 15-entry bypass log
+  had ONE root cause: the gateway was invoked under a system `python3` lacking `bs4`/`psycopg`, so
+  every child step `ImportError`ed and was waived. Path-existence is the gate (a real import-probe
+  would cost a subprocess); the venv is created by `uv sync --extra dev` before the gateway runs.
+  Fixing the gateway's interpreter propagates to all sub-validators because `run_all.py` itself
+  spawns each via its own `sys.executable` (now the venv python). macOS/Linux only (`bin/python`,
+  not Windows `Scripts/python.exe`).
+- **Per-`ask()` resolution memo (I4) — honest scope:** `query/engine.py` `ask()` builds a FRESH local
+  dict each call and threads it into `_resolve_subjects`, which memoizes `resolve_entity` keyed on
+  `term.strip().lower()`. It MUST be per-call, never an instance attribute — a long-lived engine memo
+  would serve a stale `None`/entity across requests after an ingest (a real correctness bug). But
+  `_candidate_terms` already dedups terms case-sensitively (`dict.fromkeys`, `_WORD_RE` preserves
+  case), so the memo only collapses **case/whitespace-variant** lookups ("Revenue" vs "revenue") —
+  NOT the dominant cost of many distinct names. The true 40→1 collapse needs a batch
+  `Repository.resolve_entities(terms)`, which is a **frozen-contract change → Foundational, deferred**
+  (propose-don't-fork). The memo key is valid only because this call site passes neither
+  `entity_type` nor `context`.
+- **assert→raise on infra post-conditions (I2):** the 6 `assert row is not None` guards in
+  `db/repository.py` (add_document/add_chunks/upsert_entity/add_claim) + `db/audit_queries.py`
+  (count(*) rows) are `raise RuntimeError(...)` — they guard real dereferences and would vanish under
+  `python -O`. CI-verified by the integration job (they sit on already-covered count(*)/hash paths).
+- **`_as_of_filter` helper (I5):** the org `as_of` validity clause lives in ONE
+  `PostgresRepository._as_of_filter(as_of) -> (sql_fragment, params)` reused by `_org_root_id`,
+  `_reports_to_edges`, `_dotted_reports_map`. Replaced `_org_root_id`'s f-string SQL; the fragment is
+  a fixed constant, all values `%s`-parameterized. `_org_root_id` embeds the clause twice (main +
+  NOT IN subquery) → `params + params` (4 placeholders). Behavior-identical.
+- **Audit layer-break is INTENTIONAL (I6/D1):** `audit/run.py` reaches `db.audit_queries` directly,
+  bypassing the frozen `Repository` Protocol. In-bounds ONLY under two invariants documented at the
+  import site: (1) READ-ONLY (read-only session, never mutates), (2) CENSUS/INTROSPECTION not domain
+  serving (count(*), schema-column checks, raw fact rows the Protocol doesn't expose). A future
+  mutating or domain-serving call there is OUT of bounds — route it through `Repository`. NOT a code
+  change — accepted-and-documented (adding census reads to the frozen Protocol would fork it for a
+  one-off consumer).
+- **Org `as_of` xfails were stale tests, not bugs (I9/D3):** undated seeded `reports_to`/`dotted_line_to`
+  edges (SP_011, `as_of=None`) have NO temporal lower bound, so they correctly remain visible under any
+  `as_of`. The xfailed tests asserted an early `as_of` *empties* the chart — the wrong temporal model.
+  Fix was the TEST, never `get_org_subtree` (filtering undated edges would regress SP_011's
+  export-dedup). The repository test pins BOTH halves now: undated persists AND a genuinely dated edge
+  (isolated `reports_to` queried by explicit `root_id`) IS filtered before its `as_of`.
+- **Live-detector skip guards the missing relation (I9/D4):** on an empty CI pgvector with no schema,
+  `get_contradictions` raises `relation "contradictions" does not exist` (and aborts the txn) BEFORE
+  any row-count skip. Guard with `SELECT to_regclass('public.contradictions')` (NULL when absent,
+  never raises) and `pytest.skip`.
+- **Combined coverage is ADVISORY, the gate flip is DEFERRED (I8):** the unit (`gateway`) and db
+  (`integration`) jobs each emit a `.coverage.*` artifact; a third `continue-on-error` `coverage` job
+  combines them → `coverage.xml` (advisory artifact). It does NOT gate deploy. Flipping
+  `.validators.yml` `coverage.require_report: true` (80% enforcing) is deferred until the COMBINED
+  number is observed ≥80% in CI — gating on an unverified threshold would red every PR (Stage-3
+  CRITICAL). Unit-half measured at 85% locally, so the union clears 80% comfortably; the flip is a
+  low-risk one-liner follow-up.

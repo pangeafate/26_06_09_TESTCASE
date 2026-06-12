@@ -1,6 +1,6 @@
 ---
 status: living
-last-reconciled: 2026-06-12
+last-reconciled: 2026-06-13
 authoritative-for: [active-sprint, sprint-history]
 ---
 
@@ -10,17 +10,27 @@ authoritative-for: [active-sprint, sprint-history]
 
 ## Active Sprint
 
-**Current:** SP_030
+**Current:** SP_031
 **Started:** 2026-06-12
-**Stage:** Complete — serving-path test/CI hardening. **CI GREEN on PR #4** (run 27394399507):
-a DB-free `gateway` job (unit suite) + a new `integration` job that runs the db suite against
-pgvector (72 passed, 3 xfailed, 1 skipped). The real `MCP dispatch → HelixQueryEngine →
-PostgresRepository` path now runs on every PR + gates deploy; a fail-loud `HELIXPAY_REQUIRE_DB`
-guard kills silent skips. Also: fake↔real repository conformance, MCP-tools-e2e, owner-cited
-redundancy cleanup, `validate_tdd` auto-detect + advisory mirror-map. The gate immediately
-exposed 3 pre-existing db-test failures (silently skipped ~20 sprints) → xfailed + tracked for
-SP_031. No production `helixpay/` changes. **Merge to main left for operator.** Follow-on SP_031
-(5 production serving-path smells + the 3 xfailed tests) sequenced after.
+**Stage:** Complete — serving-path **production** hardening, landing on the SP_030 CI gate. Five
+verified production smells paid down: I1 dev-gateway runs the project interpreter (`_project_python`)
+→ retires the 15-entry bypass-log root cause; I2 six `assert row is not None` infra guards →
+explicit `raise` (survive `python -O`); I3 corrected the "recursive CTE" docstrings (org subtree is
+Python-side); I4 fresh per-`ask()` `resolve_entity` memo (honest scope: dedups variant lookups only;
+true N+1 = a deferred frozen-contract `resolve_entities`); I5 `_org_root_id` f-string SQL → shared
+`_as_of_filter` helper; I6/D1 audit→`db.audit_queries` layer-break accepted-and-documented
+(read-only + census invariants). Plus I7 DB-free `ask()` branch coverage, I8 advisory combined
+two-job coverage (`require_report` flip deferred until combined ≥80%; unit-half 85%), and I9 the 3
+pre-existing xfailed db tests resolved (D3 stale org-`as_of` expectations rewritten to pin
+undated-persists AND dated-IS-filtered; D4 live-detector guards the missing relation). 2 Stage-3
+reviews + 1 plan-blind Stage-5 (SHIP). Local: mypy clean, 758 unit passed. DB-dependent edits
+verified by the CI `integration` job. **Merge to main left for operator.**
+
+SP_030 — serving-path test/CI hardening (Complete, **merged to main** via PR #4, merge `6bb36c4`).
+A DB-free `gateway` job + an `integration` job running the db suite against pgvector. The real
+`MCP dispatch → HelixQueryEngine → PostgresRepository` path now runs on every PR + gates deploy;
+`HELIXPAY_REQUIRE_DB` kills silent skips. Exposed 3 pre-existing db failures (xfailed) → resolved in
+SP_031.
 
 <!-- NOTE: The **Current:** format is required by validate_sprint.py's active sprint detection. -->
 

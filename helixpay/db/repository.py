@@ -161,7 +161,10 @@ class PostgresRepository:
                     )
                     row = cur.fetchone()
                 if row is None:
-                    raise RuntimeError("add_chunks: chunk row missing after insert/select")
+                    raise RuntimeError(
+                        "add_chunks: chunk row missing after insert/select "
+                        f"(document_id={chunk.document_id}, ordinal={chunk.ordinal})"
+                    )
                 ids.append(int(row["id"]))
             self.conn.commit()
         return ids

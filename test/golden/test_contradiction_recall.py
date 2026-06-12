@@ -149,7 +149,7 @@ def test_live_detector_meets_baseline(oracle, db_url):
         # raise `relation "contradictions" does not exist` (which also aborts the txn). Guard
         # the missing-relation case first; `to_regclass` returns NULL (never raises) when absent.
         with conn.cursor() as cur:
-            cur.execute("SELECT to_regclass('contradictions') AS t")
+            cur.execute("SELECT to_regclass('public.contradictions') AS t")
             if cur.fetchone()["t"] is None:
                 pytest.skip("contradictions relation absent — schema not applied, nothing to score")
         if not repo.get_contradictions(None):

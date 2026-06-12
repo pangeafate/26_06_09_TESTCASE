@@ -430,7 +430,11 @@ class HelixQueryEngine:
         "revenue") and caches the ``None`` miss so an ambiguous name is not re-queried.
         NOTE: this dedups *variant* lookups only — the dominant cost of many *distinct*
         names is not collapsed; a true batch ``resolve_entities`` would need a frozen
-        ``Repository`` Protocol change (deferred, propose-don't-fork)."""
+        ``Repository`` Protocol change (deferred, propose-don't-fork).
+
+        The memo key is valid ONLY because this call site passes neither ``entity_type`` nor
+        ``context`` to ``resolve_entity``. If either is ever parameterized here, the key must
+        include them or two same-name lookups with different filters would collide."""
         found: dict[int, "Entity"] = {}
         for term in terms:
             key = term.strip().lower()
