@@ -54,7 +54,8 @@ def has_evidence_columns(conn: DictConnection) -> bool:
             (list(_EVIDENCE_COLUMNS),),
         )
         row = cur.fetchone()
-        assert row is not None  # count(*) always returns one row
+        if row is None:  # count(*) always returns one row
+            raise RuntimeError("has_evidence_columns: count(*) returned no row")
         return row["n"] == len(_EVIDENCE_COLUMNS)
 
 
@@ -64,7 +65,8 @@ def table_counts(conn: DictConnection) -> dict[str, int]:
         for table in _CORE_TABLES:
             cur.execute(f"SELECT count(*) AS n FROM {table}")  # noqa: S608 - fixed allow-list
             row = cur.fetchone()
-            assert row is not None  # count(*) always returns one row
+            if row is None:  # count(*) always returns one row
+                raise RuntimeError(f"table_counts: count(*) on {table} returned no row")
             counts[table] = row["n"]
     return counts
 

@@ -23,6 +23,15 @@ from helixpay.audit.models import AuditReport, ClaimRecord
 from helixpay.audit.report import format_report, report_to_dict
 from helixpay.audit.sampling import stratified_sample
 from helixpay.audit.traps import build_trap_context, run_traps
+
+# LAYER EXCEPTION (SP_031 I6/D1 — accepted & documented, not a code change):
+# the audit subsystem reaches `helixpay.db.audit_queries` directly, bypassing the frozen
+# `Repository` Protocol. In-bounds ONLY under two invariants: (1) READ-ONLY (the session is
+# opened read-only; the audit never mutates the corpus), and (2) CENSUS / INTROSPECTION, not
+# domain serving (count(*), schema-column checks, raw fact rows the frozen Repository
+# deliberately does not expose). Adding census reads to the frozen Protocol would fork it for
+# a one-off consumer (propose-don't-fork). A future `audit_queries` call that mutates, or
+# serves a domain read, is OUT of bounds — route it through `Repository` instead.
 from helixpay.db import audit_queries
 
 

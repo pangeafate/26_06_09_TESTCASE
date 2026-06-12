@@ -116,8 +116,9 @@ class Repository(Protocol):
         ...
 
     def get_org_subtree(self, root_id: Optional[int] = None, as_of: Optional[date] = None) -> OrgNode:
-        """Recursive-CTE org subtree from ``root_id`` (or the org root). ``as_of``
-        filters reporting lines to those valid at that date."""
+        """Org subtree from ``root_id`` (or the org root), assembled Python-side by
+        recursing over flat ``reports_to`` edge-map queries (NOT a SQL recursive CTE).
+        ``as_of`` filters reporting lines to those valid at that date."""
         ...
 
     def get_contradictions(self, subject_id: Optional[int] = None) -> list[Contradiction]:

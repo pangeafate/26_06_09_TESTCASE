@@ -128,7 +128,8 @@ class Claim(BaseModel):
 
 
 class Link(BaseModel):
-    """A typed relation, including org hierarchy (queried via recursive CTE)."""
+    """A typed relation, including org hierarchy (the subtree is assembled Python-side
+    over flat edge-map queries, not a SQL recursive CTE)."""
 
     id: Optional[int] = None
     from_entity_id: int

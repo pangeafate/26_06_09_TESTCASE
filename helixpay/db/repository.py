@@ -132,7 +132,8 @@ class PostgresRepository:
             if row is None:  # already present — idempotent no-op
                 cur.execute("SELECT id FROM documents WHERE content_hash = %s", (doc.content_hash,))
                 row = cur.fetchone()
-            assert row is not None  # the hash exists either way
+            if row is None:  # the hash must exist either way (insert or prior row)
+                raise RuntimeError("add_document: content_hash row missing after upsert")
             self.conn.commit()
             return int(row["id"])
 
@@ -159,7 +160,8 @@ class PostgresRepository:
                         (chunk.document_id, chunk.ordinal),
                     )
                     row = cur.fetchone()
-                assert row is not None
+                if row is None:
+                    raise RuntimeError("add_chunks: chunk row missing after insert/select")
                 ids.append(int(row["id"]))
             self.conn.commit()
         return ids
@@ -181,7 +183,8 @@ class PostgresRepository:
                 (e.canonical_name, e.entity_type, Json(e.attributes), e.seeded),
             )
             row = cur.fetchone()
-            assert row is not None
+            if row is None:
+                raise RuntimeError("upsert_entity: INSERT ... RETURNING id produced no row")
             self.conn.commit()
             return int(row["id"])
 
@@ -309,7 +312,8 @@ class PostgresRepository:
                     (c.subject_entity_id, c.predicate, c.object_value, c.source_chunk_id),
                 )
                 row = cur.fetchone()
-            assert row is not None
+            if row is None:
+                raise RuntimeError("add_claim: claim row missing after insert/select")
             self.conn.commit()
             return int(row["id"])
 
@@ -541,46 +545,47 @@ class PostgresRepository:
 
         return build(root_id)
 
+    @staticmethod
+    def _as_of_filter(as_of: Optional[date]) -> tuple[str, list[Any]]:
+        """The reporting-line validity clause for a given ``as_of`` (empty when ``None``).
+
+        Returns ``(sql_fragment, params)``. The fragment is a **fixed constant** — every
+        value is ``%s``-parameterized, never interpolated — so callers compose it by
+        concatenation instead of f-string SQL (SP_031 I5). Shared by ``_org_root_id``,
+        ``_reports_to_edges`` and ``_dotted_reports_map`` so the clause lives in one place."""
+        if as_of is None:
+            return "", []
+        return (
+            " AND (as_of IS NULL OR as_of <= %s) AND (valid_to IS NULL OR valid_to > %s)",
+            [as_of, as_of],
+        )
+
     def _org_root_id(self, as_of: Optional[date] = None) -> Optional[int]:
         """Top of the org: a manager (has incoming reports_to) with no outgoing one,
         evaluated over the reporting lines valid at ``as_of``."""
-        date_filter = ""
-        params: list[Any] = []
-        if as_of is not None:
-            date_filter = " AND (as_of IS NULL OR as_of <= %s) AND (valid_to IS NULL OR valid_to > %s)"
-            params = [as_of, as_of, as_of, as_of]
+        clause, params = self._as_of_filter(as_of)
+        sql = (
+            "SELECT DISTINCT to_entity_id AS id FROM links "
+            "WHERE link_type = 'reports_to'" + clause + " "
+            "AND to_entity_id NOT IN ("
+            "SELECT from_entity_id FROM links WHERE link_type = 'reports_to'" + clause
+            + ") ORDER BY id ASC LIMIT 1"
+        )
         with self.conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT DISTINCT to_entity_id AS id FROM links
-                WHERE link_type = 'reports_to'{date_filter}
-                  AND to_entity_id NOT IN (
-                      SELECT from_entity_id FROM links WHERE link_type = 'reports_to'{date_filter}
-                  )
-                ORDER BY id ASC
-                LIMIT 1
-                """,
-                params,
-            )
+            cur.execute(sql, params + params)  # clause appears twice → params doubled
             row = cur.fetchone()
             return int(row["id"]) if row else None
 
     def _reports_to_edges(self, as_of: Optional[date]) -> list[tuple[int, int]]:
-        sql = "SELECT from_entity_id, to_entity_id FROM links WHERE link_type = 'reports_to'"
-        params: list[Any] = []
-        if as_of is not None:
-            sql += " AND (as_of IS NULL OR as_of <= %s) AND (valid_to IS NULL OR valid_to > %s)"
-            params += [as_of, as_of]
+        clause, params = self._as_of_filter(as_of)
+        sql = "SELECT from_entity_id, to_entity_id FROM links WHERE link_type = 'reports_to'" + clause
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return [(int(r["from_entity_id"]), int(r["to_entity_id"])) for r in cur.fetchall()]
 
     def _dotted_reports_map(self, as_of: Optional[date]) -> dict[int, list[int]]:
-        sql = "SELECT from_entity_id, to_entity_id FROM links WHERE link_type = 'dotted_line_to'"
-        params: list[Any] = []
-        if as_of is not None:
-            sql += " AND (as_of IS NULL OR as_of <= %s) AND (valid_to IS NULL OR valid_to > %s)"
-            params += [as_of, as_of]
+        clause, params = self._as_of_filter(as_of)
+        sql = "SELECT from_entity_id, to_entity_id FROM links WHERE link_type = 'dotted_line_to'" + clause
         out: dict[int, list[int]] = {}
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
