@@ -24,13 +24,12 @@ touches_paths:
   - test/unit/query/test_engine_branches.py
   - helixpay/audit/run.py
   - .github/workflows/dev-rules-ci.yml
-  - .validators.yml
   - test/integration/query/test_query_integration.py
   - test/integration/db/test_repository_integration.py
   - test/golden/test_contradiction_recall.py
   - workspace/CLAUDE_GOTCHAS.md
   - CLAUDE.md
-touches_checklist_items: [gateway-project-python, gateway-interpreter-test, repo-assert-to-raise, audit-assert-to-raise, n1-resolve-cache, n1-cache-test, cte-docstring-repository, cte-docstring-models, org-root-sql-compose, audit-layer-accept-doc, ask-branch-multi-entity, ask-branch-temporal, ask-branch-org-subtree, ask-branch-synth-fail, coverage-combine-ci, coverage-require-report, xfail-org-chart-asof, xfail-org-subtree-asof, xfail-live-detector-skip, gotcha-audit-layer]
+touches_checklist_items: [gateway-project-python, gateway-interpreter-test, repo-assert-to-raise, audit-assert-to-raise, n1-resolve-cache, n1-cache-test, cte-docstring-repository, cte-docstring-models, org-root-sql-compose, audit-layer-accept-doc, ask-branch-multi-entity, ask-branch-route-both, ask-branch-contradictions, ask-branch-synth-fail, org-chart-unit-test, coverage-combine-ci-advisory, xfail-org-chart-asof, xfail-org-subtree-asof, xfail-live-detector-skip, gotcha-audit-layer]
 ---
 
 # SP_031: Serving-Path Production Hardening
@@ -129,7 +128,10 @@ waived. A gate that runs is worth infinitely more than a 15-entry bypass log.
 Stripped under `python -O`; these guard real dereferences / infra post-conditions.
 `db/repository.py:135,162,184,312` + `db/audit_queries.py:57,67` → `if row is None: raise
 RuntimeError(<context>)`. Behavior-preserving under normal `-O`-free runs; **CI-verified**
-by the `integration` job.
+by the `integration` job. _Process note (Stage-3 LOW): these guards sit on
+count(*)/hash-exists paths the existing `db` suite exercises; the change is a safer error
+type on an already-covered line, so CI green is meaningful even though the `None` branch
+itself is not separately forced._
 
 ### I3 — Fix the inaccurate "recursive CTE" docstrings (doc-only)
 `contracts/repository.py:119` and `contracts/models.py:131` claim the org subtree is
@@ -141,12 +143,19 @@ test (doc-only).
 `query/engine.py:_resolve_subjects` (≈417) issues up to `_MAX_TERMS` (40) serial
 `resolve_entity` round-trips per `ask()` — self-documented "Protocol friction." **D2: a
 per-`ask()` cache, not a frozen-contract change** (adding `resolve_entities` to the frozen
-`Repository` Protocol is Foundational/propose-don't-fork — out of scope). Memoize
-`resolve_entity` by normalized term within a single `ask()` so repeated terms collapse to
-one lookup.
-- **TDD (local):** `test/unit/query/test_engine_branches.py` — a counting `FakeRepository`
-  asserts a question with repeated/aliased terms calls `resolve_entity` once per *distinct*
-  term, not once per occurrence.
+`Repository` Protocol is Foundational/propose-don't-fork — out of scope).
+- **The cache MUST be a fresh local dict per `ask()` call, NOT an instance attribute on
+  `HelixQueryEngine`** (Stage-3 architect finding): an instance-level memo on a long-lived
+  engine would leak a stale `None`/entity across requests after a concurrent ingest —
+  turning a safe per-request memo into a correctness bug. Pass the dict into
+  `_resolve_subjects` (or build it in `ask()` and thread it through). Key on the **raw term
+  string** as passed by `_resolve_subjects` (the repo normalizes internally), so the memo
+  collapses exactly what `resolve_entity` already treats as the same lookup.
+- **TDD (local):** `test/unit/query/test_engine_branches.py` — a counting subclass of
+  `FakeRepository` asserts (1) a question with a repeated term calls `resolve_entity` once
+  per *distinct* term, not once per occurrence; (2) a cached `None` (ambiguous bare name)
+  is not re-queried and never flips to a pick; (3) **two separate `ask()` calls each
+  re-resolve** (proves per-call isolation, not instance leak).
 
 ### I5 — `_org_root_id` f-string SQL → composed parameterized fragment (smell-only)
 `db/repository.py:544-566` builds `date_filter` via f-string. **Injection-safe today**
@@ -159,26 +168,48 @@ no interpolated SQL text. Behavior-identical; **CI-verified** by the `integratio
 `Repository` Protocol. **D1: accept-and-document.** The audit subsystem (SP_029) is a
 **read-only integrity census**; the frozen `Repository` Protocol exposes no census reads,
 and adding them is a Foundational contract change (propose-don't-fork — do not fork the
-frozen type for a census). Resolution: an explicit module-level comment in `audit/run.py`
-documenting the *intentional, read-only* exception, plus a gotcha (I-gotcha). No Protocol
-change.
+frozen type for a census). Resolution: an explicit comment **at the import site**
+(`audit/run.py:26`, not only module-top — Stage-3 finding) naming the **two invariants**
+that bound the exception — (1) **read-only** and (2) **census/introspection, not domain
+serving** — so a future reviewer can tell at a glance whether a new `audit_queries` call is
+still in-bounds, plus a CLAUDE.md/gotcha entry. No Protocol change.
 
 ### I7 — DB-free unit branch coverage for `ask()` (the real remaining serving gap)
 `test/unit/query/test_engine_branches.py` (shared with I4), all via
-`query/fakes.py:FakeRepository` (no DB):
-- **multi-entity** query → multiple subjects resolved and gathered;
-- **temporal** filtering path (`as_of` in the question);
-- **org-subtree** expansion;
-- **synthesis-failure** degradation (synth raises → `ask()` still returns a bundle with
-  `contradictions` present-and-empty, no uncited claims).
+`query/fakes.py:FakeRepository` (no DB). **Branch names corrected per Stage-3 review** —
+`ask()` reads only `plan.route` + `plan.wants_contradictions` and **never calls
+`get_org_subtree`** (that's `get_org_chart`, a separate method). The genuine `ask()`
+branches:
+- **multi-entity** query → multiple distinct subjects resolved and their facts gathered;
+- **route = `both`** (a retrieval+structured question) vs **structured-only** → asserts the
+  retrieval leg runs (chunks gathered) only on the `both`/`retrieval` route, via the
+  `last_trace["route"]` value, not a phantom temporal repo call;
+- **contradictions always surfaced** → `AnswerBundle.contradictions` is present-and-empty
+  even when synthesis cites none (the ontology invariant);
+- **synthesis-failure degradation** (`engine.py:135` `ask.synthesis_failed`) → with an
+  **inline one-line `FakeSynthesizer` subclass that raises** (avoids editing the unlisted
+  `fakes.py`; Stage-3 finding), `ask()` still returns a bundle with `contradictions`
+  present-and-empty and zero uncited claims.
+- **PLUS** a separate `get_org_chart()` unit test (the real home of `get_org_subtree`) via
+  the fake → covers the hierarchy-assembly serving surface DB-free.
 
-### I8 — Combined coverage gate (make the 80% real, not aspirational)
-- `.github/workflows/dev-rules-ci.yml`: have the `gateway` (unit) and `integration` (db)
-  jobs each emit a `.coverage`/`coverage.xml` data file, then `coverage combine` +
-  `coverage xml` so the gate sees the **union** of both paths (closes the two-job blind
-  spot from correction #2).
-- `.validators.yml`: set `coverage.require_report: true` so `validate_tdd` **fails** (not
-  silently advisories) when combined line coverage < 80%.
+### I8 — Combined coverage: **measure first, gate later** (revised per Stage-3 CRITICAL)
+Stage-3 review flagged that (a) `coverage combine` across two **separate** `ubuntu-latest`
+runners is impossible without artifact upload/download, and (b) flipping
+`coverage.require_report: true` before the combined number is known/wired would **red every
+PR and block deploy** (current combined coverage is unmeasured). Revised, de-risked plan:
+- `.github/workflows/dev-rules-ci.yml`: add `--cov=helixpay --cov-report=` to **both** the
+  `gateway` (unit) and `integration` (db) pytest invocations; each uploads its `.coverage`
+  data file via `actions/upload-artifact`. Add a **third `coverage` job**
+  (`needs: [gateway, integration]`) that downloads both, runs `coverage combine` +
+  `coverage xml` + `coverage report`, and uploads `coverage.xml`. This **surfaces the real
+  union number as an advisory artifact** — closing the measurement blind spot.
+- **Do NOT flip `coverage.require_report: true` in this sprint.** The enforcing flip is
+  explicitly **deferred**: it lands only once the combined number is observed ≥ 80% (a
+  one-line follow-up commit, or a tracked SP_032 item if the measured number is below 80%
+  and needs real coverage work first). Gating on an unverified threshold is the
+  self-blocking trap the review caught. `.validators.yml` is left at `require_report: false`
+  (advisory) this sprint; the plan records the measured number in the Outcome.
 
 ### I9 — Resolve the three xfailed pre-existing `db` failures
 - **(a)(b) org-chart `as_of` (D3):** `test_get_org_chart_as_of_before_roster_is_empty`
@@ -189,9 +220,16 @@ change.
   temporal bound** and *correctly* remains visible under any `as_of`. **D3: the test
   expectation is stale — fix the tests** to assert undated edges persist; do **not** make
   `get_org_subtree` filter undated edges (that would regress SP_011). Remove `xfail`.
+  **Strengthened per Stage-3 architect:** the rewritten tests must pin **both** facts so the
+  temporal-filter coverage isn't silently lost — (1) an **undated** edge persists under an
+  early `as_of`, AND (2) a genuinely **dated** edge (explicit `as_of`/`valid_to`) IS
+  correctly filtered out before its `as_of` / after its `valid_to`.
 - **(c) live detector (D4):** `test_live_detector_meets_baseline`
-  (`test_contradiction_recall.py`) errors on an empty CI pgvector. **D4: graceful skip** —
-  `pytest.skip(...)` when the corpus is unbuilt (claim count below a floor). Remove `xfail`.
+  (`test_contradiction_recall.py`) errors on an empty CI pgvector. **D4: graceful skip.**
+  Per Stage-3 architect, the failure is `relation "contradictions" does not exist`
+  (**schema absent**), which raises *before* any row-count check — so the guard must detect
+  the **missing relation** (`to_regclass('contradictions') IS NULL`, or catch the
+  undefined-table error) and `pytest.skip`, not merely floor on claim count. Remove `xfail`.
 
 ### I10 — FakeRepo consolidation: documented decision (descoped, see correction #3)
 Record in this plan + the post-impl notes that query tests already share
@@ -222,14 +260,16 @@ TDD per `practices/GL-TDD.md`. Split by what the no-local-DB env can verify:
 Gate: `uv run pytest test` (DB-free subset locally) + `uv run mypy helixpay` clean + the
 dev-gateway runs to completion **without a bypass**; full `db` suite green in CI.
 
-### Pre-Implementation Review (Stage 3 — Standard floor: ≥2 iterations)
+### Pre-Implementation Review
 
-- **Iteration 1** — Reviewer: architect-review agent (plan-blind to authorship). Severity: HIGH. Files reviewed: workspace/sprints/SP_031_serving_path_hardening.md, helixpay/query/engine.py, helixpay/db/repository.py, helixpay/audit/run.py, scripts/dev-gateway.py.
-  _(to be filled at review time — focus: does the per-ask cache (D2) stay inside the frozen contract; is accept-and-document (D1) the right call vs a Protocol change; is D3 fixing the test the right side of the org-chart `as_of` ambiguity)_
-- **Iteration 2** — Reviewer: code-review agent (independent). Severity: MEDIUM. Files reviewed: scripts/dev-gateway.py, test/unit/query/test_engine_branches.py, .github/workflows/dev-rules-ci.yml, .validators.yml.
-  _(to be filled — focus: gateway interpreter precedence correctness; coverage-combine wiring across two CI jobs; no unit job regression from require_report flip)_
+- **Iteration 1** — Reviewer: architect-review agent (independent). Severity: MEDIUM (verdict APPROVE-WITH-CHANGES). Files reviewed: workspace/sprints/SP_031_serving_path_hardening.md, helixpay/query/engine.py, helixpay/db/repository.py, helixpay/audit/run.py, test/integration/query/test_query_integration.py, test/integration/db/test_repository_integration.py, test/golden/test_contradiction_recall.py.
+  - All three load-bearing decisions verified sound against code: **D2** the per-`ask()` cache adds no frozen-contract surface (the serving path is fully read-only; `resolve_entity` is a pure name-keyed read, so memoizing by term is correctness-safe and even preserves ambiguous-→None); **D1** accept-and-document is proportionate (audit is read-only census; the frozen `Repository` exposes no census reads — adding them would be the fork-the-frozen-type anti-pattern); **D3** the code is correct and "fix the test" masks nothing (an undated SP_011 edge satisfies `as_of IS NULL` and must remain visible under any `as_of`). Tier **Standard** confirmed (one runtime seam, no schema/contract surface).
+  - **Required changes folded in:** (MEDIUM/D2) pin the cache **fresh-per-`ask()`, not instance-level** + test two `ask()` calls each re-resolve → I4; (MEDIUM/D3) rewritten tests must also assert a **dated** edge IS filtered, not only that undated persists → I9(a)(b); (MEDIUM/D4) guard the **relation-missing** (schema-absent) case, not a row-count floor → I9(c); (LOW/D1) put the justification **at the import site** → I6.
+- **Iteration 2** — Reviewer: code-review agent (independent). Severity: CRITICAL (verdict APPROVE-WITH-CHANGES). Files reviewed: scripts/dev-gateway.py, test/unit/query/fakes.py, helixpay/query/engine.py, .github/workflows/dev-rules-ci.yml, .validators.yml, validators/validate_tdd.py.
+  - **(CRITICAL/I8)** `coverage combine` across two separate CI runners is impossible without artifact upload/download, and flipping `require_report: true` before the combined number is known would red every PR and block deploy → **resolved**: I8 revised to measure-first (third `coverage` job over uploaded artifacts, advisory) and the enforcing flip **deferred** until the number is observed ≥80%; `.validators.yml` stays `require_report: false` this sprint.
+  - **(HIGH/I4-I7)** `FakeSynthesizer` has no raise mode and `fakes.py` is not in `touches_paths` → **resolved**: the synthesis-failure test uses an **inline** raising `FakeSynthesizer` subclass; `fakes.py` stays untouched. **(HIGH/I7)** "temporal"/"org-subtree" branch names were inaccurate (`ask()` never calls `get_org_subtree`) → **resolved**: I7 branches re-described to the genuine `ask()` routes + a separate `get_org_chart()` test. **(MEDIUM/I4)** cache-key normalization boundary → test includes a whitespace/case variant. **(MEDIUM/I1)** gateway interpreter precedence (`$VIRTUAL_ENV` → `.venv/bin/python` → `sys.executable`) confirmed correct; path-existence is the right gate; document the `run_all.py` propagation chain in the test docstring.
 
-### Post-Implementation Review (Stage 5 — plan-blind, code+tests only)
+### Post-Implementation Review
 
 - **Iteration 1** — Reviewer: code-review agent (sees only diff + tests, never this plan). Severity: TBD. Files reviewed: (all touches_paths).
   _(to be filled after tests pass; verify any CRITICAL against runtime/CI evidence per Core Rule 5)_
@@ -240,7 +280,10 @@ dev-gateway runs to completion **without a bypass**; full `db` suite green in CI
   `uv run mypy helixpay` clean; **the dev-gateway now runs to completion without a bypass.**
 - CI `integration` job green with the three former-`xfail` tests now **passing** (xfail
   removed) and the assert→raise / SQL-compose edits exercised against real Postgres.
-- Combined coverage report produced; `validate_tdd` enforces 80% on the union.
+- Combined coverage report **produced and surfaced as an artifact** (the real union number
+  recorded in the Outcome); the enforcing `require_report` flip is **deferred** until that
+  number is observed ≥80% (not gated this sprint — Stage-3 CRITICAL).
+- The I4 cache is **fresh-per-`ask()`** (test proves two `ask()` calls each re-resolve).
 - `CLAUDE.md` + `workspace/CLAUDE_GOTCHAS.md` carry the audit-layer (D1) gotcha.
 
 ## Hand-off
