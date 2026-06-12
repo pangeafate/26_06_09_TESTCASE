@@ -308,17 +308,26 @@ passed, 12 skipped**; the four new gateway-interpreter tests + nine `ask()`-bran
 tests green. The DB-dependent edits (I2 assert→raise, I5 SQL-compose, I9 xfail removals) are
 left to the CI `integration` job against real `pgvector` — this sprint's safety net by design.
 
-**Measured coverage:** unit-half = **85%** locally (`pytest test/unit --cov=helixpay`). The
-CI combine job will report the union with the integration job; since the union is ≥ the
-unit-half, the combined number clears the 80% `validate_tdd` threshold comfortably — so the
-deferred `require_report: true` flip (below) is **low-risk** when a follow-up takes it.
+**Measured coverage:** unit-half = **85%** locally; **combined = 94%** as reported by the CI
+`coverage` job (union of the unit + integration runs, run 27397018203) — well above the 80%
+`validate_tdd` threshold, so the deferred `require_report: true` flip (below) is now
+**confirmed low-risk** (the number is observed, not inferred).
+
+**CI verification (PR #5, run 27397018203 — all three jobs green):** `gateway` 827 passed /
+77 skipped; `integration` (real pgvector) **74 passed, 2 skipped** — i.e. the three former
+`xfail`s are gone: D3's two org-`as_of` tests now **pass green** and D4's live-detector
+**skips gracefully** on the unbuilt CI corpus; `coverage` advisory job produced the 94% union.
+(First push failed in 0s — `hashFiles()` is rejected in a job-level `if`; fixed with
+`if: ${{ always() }}` on the coverage job.)
 
 ## Hand-off
 
 Optional follow-ups (none blocking; HelixPay serving path is now branch-tested + gated):
-1. **Flip the coverage gate to enforcing** once CI prints the combined number ≥80%: set
-   `coverage.require_report: true` in `.validators.yml` (one line). The advisory `coverage`
-   job already produces `coverage.xml`; this just makes `validate_tdd` fail below threshold.
+1. **Flip the coverage gate to enforcing** — CI now reports the combined number at **94%**
+   (≥80%), so this is unblocked: set `coverage.require_report: true` in `.validators.yml` (one
+   line). The advisory `coverage` job already produces `coverage.xml`; this just makes
+   `validate_tdd` fail below threshold. (Kept out of this sprint per the Stage-3 CRITICAL —
+   measure first, gate second — now measured.)
 2. **(post-impl H1, optional)** If CI infra ever changes, isolate the integration job's
    `--cov` into a separate `continue-on-error` step so coverage bookkeeping can never affect
    the real db gate. Near-zero risk today (`--cov-report=`, no `--cov-fail-under`,
