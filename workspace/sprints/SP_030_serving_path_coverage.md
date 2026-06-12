@@ -19,7 +19,9 @@ touches_paths:
   - test/unit/test_db_required_guard.py
   - test/unit/query/test_repository_conformance.py
   - test/integration/db/test_mcp_tools_integration.py
+  - test/integration/db/test_repository_integration.py
   - test/integration/query/test_query_integration.py
+  - test/golden/test_contradiction_recall.py
   - test/unit/ingest/test_contradict.py
   - test/unit/ingest/test_normalize.py
   - test/golden/test_harness.py
@@ -428,11 +430,28 @@ auto-detects `helixpay` + a layout-tolerant mirror-map, advisory so it reports g
 without reddening the deploy gate. Author-blind review APPROVE-WITH-NITS (all applied);
 local runtime evidence green; mypy clean.
 
-**Behavioral closure (db path): PENDING-CI.** This build env has no Docker/Postgres, so
-the db-gated tests (conformance real-half, MCP e2e, query-integration additions) are
-authored + verified to skip cleanly locally and inspection-checked against the proven
-integration patterns; their first green run is the CI run on the pushed branch. The
-require-db guard guarantees a DB misconfig fails loud rather than masquerading as green.
+**Behavioral closure (db path): CI run #1 fired RED — the gate worked.** The first CI
+run (PR #4, run 27382770615) ran the db suite for real and surfaced three buckets, all
+addressed in the follow-up commit:
+- **(C) CI design flaw, fixed:** a job-scope `DATABASE_URL` flipped `app.wire_engine()`
+  to the real engine for the WHOLE suite, breaking unit REST/MCP transport tests that
+  assume the mock. Fix: split CI into a DB-free `gateway` job (unit suite, unchanged) +
+  a separate `integration` job (`pytest test -m db` against pgvector). Unit suite is
+  DB-free again; the db-marked tests run isolated.
+- **(B) my test bug, fixed:** the MCP `find_contradictions` tool returns a bare list,
+  which FastMCP wraps as `{"result": […]}`; the test now unwraps it.
+- **(A) PRE-EXISTING breakage the gate EXPOSED (operator-approved → xfail + SP_031):**
+  three db tests that had silently skipped in CI for ~20 sprints now run and fail:
+  `test_get_org_chart_as_of_before_roster_is_empty` + `test_org_subtree_as_of_filters…`
+  (assert an early `as_of` empties the org chart, but SP_011 made seeded edges undated
+  `as_of=None` → never filtered: stale expectation or a real `get_org_subtree` bug), and
+  `test_live_detector_meets_baseline` (connects directly, needs a pre-seeded corpus →
+  errors on empty CI pgvector). Marked `xfail(strict=False)` with tracking reasons —
+  **visible in CI output, not hidden by skip** — and folded into SP_031. This is the
+  gate doing its job: it converted ~20 sprints of invisible skip-rot into tracked debt.
+
+Behavioral closure now depends on CI run #2 (the re-pushed fix) going green with the db
+suite running for real. The require-db guard still guarantees a DB misconfig fails loud.
 
 ## Hand-off
 
@@ -462,6 +481,16 @@ this build env has no local DB). Five verified production-code smells, severity-
 5. **f-string SQL fragment in `_org_root_id`** (`db/repository.py:544-566`) — smell
    only; the interpolated `date_filter` is a constant literal and all values go
    through `%s` params (injection-safe today). Refactor to a composed-clause helper.
+
+6. **Pre-existing db-test failures SP_030's gate newly exposed (xfailed, tracking here):**
+   (a) `test_get_org_chart_as_of_before_roster_is_empty` (`test_query_integration.py`) +
+   (b) `test_org_subtree_as_of_filters_reporting_lines` (`test_repository_integration.py`)
+   — both assert an early `as_of` empties the org chart, but SP_011 made seeded edges
+   undated (`as_of=None`) so they are never filtered. Decide: fix the stale test
+   expectation, OR fix `get_org_subtree`'s `as_of` filter if undated edges SHOULD be
+   excludable. (c) `test_live_detector_meets_baseline` (`test_contradiction_recall.py`)
+   — make it empty-DB-safe (skip gracefully when the corpus is unbuilt) or seed a CI
+   corpus. All three are `xfail(strict=False)` at SP_030 HEAD.
 
 These are NOT in SP_030 (test/CI-only). SP_031's safety net is precisely the `db`
 integration suite + MCP-tools-e2e file this sprint makes runnable in CI.

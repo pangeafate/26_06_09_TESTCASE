@@ -111,7 +111,9 @@ def test_get_entity_tool_returns_seeded_claims(mcp_real):
 
 
 def test_find_contradictions_tool_finds_revenue_conflict(mcp_real):
-    found = _call(mcp_real, "find_contradictions", {"topic": "revenue"})
+    raw = _call(mcp_real, "find_contradictions", {"topic": "revenue"})
+    # The tool returns a bare list; FastMCP wraps a non-object return as {"result": [...]}.
+    found = raw["result"] if isinstance(raw, dict) and "result" in raw else raw
     assert any(c["predicate"] == "revenue" and c["kind"] == "value_conflict" for c in found)
 
 
